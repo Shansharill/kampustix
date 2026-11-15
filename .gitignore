@@ -1,0 +1,22 @@
+# Environment Variables (Rahasia lokal masing-masing anggota)
+.env
+
+# Binary Executables (Hasil build aplikasi Go)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+web
+
+# File Arsip & Sampah OS
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db
+__MACOSX/
+
+# Pengaturan IDE / Editor
+.idea/
+.vscode/
+*.swp

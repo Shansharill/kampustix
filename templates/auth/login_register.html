@@ -1,0 +1,107 @@
+{{define "content"}}
+<div class="row justify-content-center my-4">
+    <div class="col-12 col-md-8 col-lg-5">
+        <!-- Kartu Autentikasi Utama (Sesuai Desain Figma Frame 1:2) -->
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-header bg-white border-0 pt-4 pb-2 text-center">
+                <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-circle mb-3" style="width: 56px; height: 56px;">
+                    <i class="bi bi-music-note-beamed fs-3 text-warning"></i>
+                </div>
+                <h4 class="fw-bold mb-1">Selamat Datang di KampusTix</h4>
+                <p class="text-secondary small mb-0">Platform tiket resmi konser dan seminar musik kampus</p>
+            </div>
+
+            <div class="card-body p-4">
+                <!-- Tab Navigasi: Beralih Antara Masuk & Daftar -->
+                <ul class="nav nav-pills nav-fill bg-light p-1 rounded-3 mb-4" id="authTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-2 fw-semibold {{ if eq .TabAktif "login" }}active{{ end }}" 
+                                id="login-tab" data-bs-toggle="tab" data-bs-target="#tab-login" type="button" role="tab">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>Masuk
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-2 fw-semibold {{ if eq .TabAktif "register" }}active{{ end }}" 
+                                id="register-tab" data-bs-toggle="tab" data-bs-target="#tab-register" type="button" role="tab">
+                            <i class="bi bi-person-plus me-1"></i>Daftar Akun
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Konten Tab Formulir -->
+                <div class="tab-content" id="authTabsContent">
+                    
+                    <!-- TAB 1: FORMULIR LOGIN -->
+                    <div class="tab-pane fade {{ if eq .TabAktif "login" }}show active{{ end }}" id="tab-login" role="tabpanel">
+                        <form action="/login" method="POST">
+                            <div class="mb-3">
+                                <label for="login-email" class="form-label small fw-semibold text-secondary">Alamat Email</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-secondary border-end-0"><i class="bi bi-envelope"></i></span>
+                                    <input type="email" class="form-control border-start-0 ps-0" id="login-email" name="email" 
+                                           value="{{ .Email }}" placeholder="nama@kampus.ac.id" required autofocus>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="login-password" class="form-label small fw-semibold text-secondary">Password</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-secondary border-end-0"><i class="bi bi-lock"></i></span>
+                                    <input type="password" class="form-control border-start-0 ps-0" id="login-password" name="password" 
+                                           placeholder="Masukkan kata sandi akun" required>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm mt-3" style="background-color: var(--kt-primary);">
+                                Masuk ke KampusTix
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- TAB 2: FORMULIR REGISTRASI (DAFTAR AKUN BARU) -->
+                    <div class="tab-pane fade {{ if eq .TabAktif "register" }}show active{{ end }}" id="tab-register" role="tabpanel">
+                        <form action="/register" method="POST">
+                            <div class="mb-3">
+                                <label for="reg-name" class="form-label small fw-semibold text-secondary">Nama Lengkap</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-secondary border-end-0"><i class="bi bi-person"></i></span>
+                                    <input type="text" class="form-control border-start-0 ps-0" id="reg-name" name="name" 
+                                           value="{{ .Name }}" placeholder="Contoh: Budi Santoso" required>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="reg-email" class="form-label small fw-semibold text-secondary">Alamat Email</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-secondary border-end-0"><i class="bi bi-envelope"></i></span>
+                                    <input type="email" class="form-control border-start-0 ps-0" id="reg-email" name="email" 
+                                           value="{{ .Email }}" placeholder="nama@kampus.ac.id" required>
+                                </div>
+                                <div class="form-text small">Email ini akan digunakan untuk pengiriman bukti e-tiket konser.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="reg-password" class="form-label small fw-semibold text-secondary">Buat Password</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-secondary border-end-0"><i class="bi bi-lock"></i></span>
+                                    <input type="password" class="form-control border-start-0 ps-0" id="reg-password" name="password" 
+                                           placeholder="Minimal 6 karakter" required minlength="6">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-warning w-100 py-2 fw-semibold shadow-sm mt-3 text-dark">
+                                Buat Akun Pembeli (BUYER)
+                            </button>
+                        </form>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="card-footer bg-light border-0 py-3 text-center">
+                <span class="small text-secondary">Dengan mendaftar, kamu menyetujui syarat & ketentuan pembelian tiket konser musik kampus.</span>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

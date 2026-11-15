@@ -1,0 +1,28 @@
+Topik 6 — Sistem Penjualan Tiket Event 
+Komunitas Musik Kampus rutin menyelenggarakan konser dan seminar dengan kapasitas 300 sampai 
+1.000 orang. Selama ini penjualan tiket dilakukan melalui formulir daring dan konfirmasi transfer secara 
+manual, sehingga pernah terjadi tiket terjual melebihi kapasitas. 
+Setiap event memiliki beberapa kategori tiket, misalnya Festival dan VIP, masing-masing dengan kuota. 
+Harga tiket dalam satu kategori dibagi menjadi beberapa tahap, misalnya Presale 1, Presale 2, dan 
+Normal. Setiap tahap memiliki kuota dan batas tanggal. Tahap berikutnya berlaku ketika kuota tahap 
+sebelumnya habis atau batas tanggalnya terlewati. 
+Pembeli dapat membeli paling banyak 4 tiket dalam satu transaksi, dan setiap tiket mencantumkan 
+nama pemegangnya. Saat pembeli memesan, tiket ditahan selama 15 menit untuk menunggu 
+pembayaran. Jika pembayaran tidak diterima dalam waktu tersebut, pesanan batal dan tiket dapat dibeli 
+oleh orang lain. Dalam project ini, pembayaran cukup disimulasikan dengan tombol konfirmasi 
+pembayaran. 
+Penyelenggara dapat membuat kode promo dengan potongan persentase, kuota pemakaian, dan 
+kategori tiket yang berlaku. 
+Pembeli dapat membatalkan tiket paling lambat 7 hari sebelum event dengan pengembalian dana 75%. 
+Jika event dibatalkan oleh penyelenggara, seluruh dana dikembalikan. Tiket yang dibatalkan oleh 
+pembeli dapat dijual kembali. Pemegang tiket dapat memindahkan tiketnya kepada orang lain satu kali. 
+Pada hari event, petugas memeriksa tiket di pintu masuk menggunakan kode tiket. Satu tiket hanya 
+dapat digunakan untuk masuk satu kali. Penyelenggara membutuhkan laporan penjualan per kategori 
+dan per tahap, serta pendapatan bersih setelah potongan promo dan pengembalian dana. 
+Lingkup aplikasi: 
+1. Pengelolaan data event, kategori tiket, dan tahapan harga. 
+2. Pemesanan tiket dengan penahanan sementara dan konfirmasi pembayaran. 
+3. Pengelolaan kode promo. 
+4. Pembatalan tiket, pengembalian dana, dan pemindahan tiket. 
+5. Pemeriksaan tiket di pintu masuk. 
+6. Laporan penjualan dan pendapatan.
