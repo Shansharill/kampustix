@@ -1,1 +1,111 @@
-<!-- TODO: Placeholder scan.html -->
+
+{{define "content"}}
+<style>
+    .scanner-card {
+        max-width: 600px;
+        margin: 30px auto;
+        background: white;
+        padding: 30px;
+        border-radius: 14px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+
+    .scanner-card input {
+        width: 100%;
+        padding: 13px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 16px;
+        margin-bottom: 15px;
+    }
+
+    .scanner-card .ticket-code {
+        font-weight: bold;
+        color: #4f46e5;
+    }
+
+    .scanner-card .ticket-info {
+        margin-top: 25px;
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+    }
+</style>
+
+<div class="scanner-card">
+    <h2 class="text-center mb-3">Gatekeeper Scanner</h2>
+
+    <p class="text-center text-secondary mb-4">
+        Masukkan kode tiket untuk melakukan validasi check-in.
+    </p>
+
+    {{if .Success}}
+        <div class="alert alert-success">
+            <strong>Berhasil!</strong>
+            <p class="mb-0">{{.Success}}</p>
+        </div>
+    {{end}}
+
+    {{if .Error}}
+        <div class="alert alert-danger">
+            <strong>Validasi gagal!</strong>
+            <p class="mb-0">{{.Error}}</p>
+        </div>
+    {{end}}
+
+    <form action="/gatekeeper/validate" method="POST">
+        <label for="ticket_code" class="form-label fw-bold">
+            Kode Tiket
+        </label>
+
+        <input
+            type="text"
+            id="ticket_code"
+            name="ticket_code"
+            class="form-control"
+            placeholder="Contoh: KTX-2026-ABC123"
+            required
+            autocomplete="off"
+        >
+
+        <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-qr-code-scan me-2"></i>
+            Validasi Tiket
+        </button>
+    </form>
+
+    {{if .Ticket}}
+        <div class="ticket-info">
+            <h4>Informasi Tiket</h4>
+
+            <p><strong>Kode:</strong>
+                <span class="ticket-code">{{.Ticket.TicketCode}}</span>
+            </p>
+
+            <p><strong>Nama:</strong> {{.Ticket.HolderName}}</p>
+            <p><strong>Email:</strong> {{.Ticket.HolderEmail}}</p>
+            <p><strong>Status:</strong> {{.Ticket.Status}}</p>
+
+            {{if .Ticket.CheckedInAt}}
+                <p>
+                    <strong>Waktu Check-in:</strong>
+                    {{.Ticket.CheckedInAt.Format "02-01-2006 15:04:05"}}
+                </p>
+            {{end}}
+    
+    {{if .Success}}
+        <hr>
+
+        <a
+            href="/gatekeeper/ticket/{{.Ticket.TicketCode}}/print"
+            class="btn btn-success w-100"
+            target="_blank"
+        >
+            <i class="bi bi-printer me-2"></i>
+            Lihat Boarding Pass
+        </a>
+    {{end}}
+        </div>
+    {{end}}
+</div>
+{{end}}

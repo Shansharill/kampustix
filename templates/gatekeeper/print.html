@@ -1,1 +1,216 @@
-<!-- TODO: Placeholder print.html -->
+
+{{define "content"}}
+<style>
+    .boarding-pass {
+        max-width: 750px;
+        margin: 30px auto;
+        background: #fff;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 5px 25px rgba(0, 0, 0, 0.12);
+        border: 1px solid #e5e7eb;
+    }
+
+    .boarding-header {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+        padding: 28px;
+    }
+
+    .boarding-body {
+        padding: 30px;
+    }
+
+    .ticket-label {
+        color: #6b7280;
+        font-size: 13px;
+        margin-bottom: 5px;
+    }
+
+    .ticket-value {
+        font-weight: 600;
+        color: #111827;
+        overflow-wrap: anywhere;
+    }
+
+    .ticket-code {
+        color: #4f46e5;
+        font-size: 20px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        overflow-wrap: anywhere;
+    }
+
+    .qr-section {
+        text-align: center;
+        padding: 25px;
+        border-top: 2px dashed #d1d5db;
+        margin-top: 25px;
+    }
+
+    #qrcode {
+        display: flex;
+        justify-content: center;
+        margin: 20px auto;
+        min-height: 130px;
+    }
+
+    .boarding-footer {
+        background: #f9fafb;
+        padding: 18px;
+        text-align: center;
+        color: #6b7280;
+    }
+
+    @media print {
+        nav, footer, .no-print {
+            display: none !important;
+        }
+
+        body {
+            background: white !important;
+        }
+
+        .boarding-pass {
+            box-shadow: none;
+            border: 1px solid #ddd;
+            margin: 0 auto;
+        }
+
+        .boarding-header {
+            background: #4f46e5 !important;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+    }
+</style>
+
+<div class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <div>
+            <h2 class="fw-bold">Boarding Pass</h2>
+            <p class="text-muted mb-0">E-Ticket KampusTix</p>
+        </div>
+
+        <button onclick="window.print()" class="btn btn-primary">
+            <i class="bi bi-printer me-2"></i>
+            Cetak Tiket
+        </button>
+    </div>
+
+    <div class="boarding-pass">
+
+        <div class="boarding-header">
+            <h3 class="fw-bold mb-1">KampusTix</h3>
+            <small>Digital Event Ticket</small>
+        </div>
+
+        <div class="boarding-body">
+
+            <div class="text-center mb-4">
+                <h3 class="fw-bold">{{.BoardingPass.EventName}}</h3>
+                <p class="text-muted mb-0">
+                    <i class="bi bi-geo-alt me-1"></i>
+                    {{.BoardingPass.Venue}}
+                </p>
+            </div>
+
+            <hr>
+
+            <div class="row g-4">
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Nama Pemegang</div>
+                    <div class="ticket-value">{{.BoardingPass.HolderName}}</div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Email</div>
+                    <div class="ticket-value">{{.BoardingPass.HolderEmail}}</div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Kode Tiket</div>
+                    <div class="ticket-code">{{.BoardingPass.TicketCode}}</div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Tanggal Event</div>
+                    <div class="ticket-value">
+                        {{.BoardingPass.EventDate.Format "02 January 2006"}}
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Kategori Tiket</div>
+                    <div class="ticket-value">{{.BoardingPass.CategoryName}}</div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Tier Tiket</div>
+                    <div class="ticket-value">{{.BoardingPass.TierName}}</div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Harga</div>
+                    <div class="ticket-value">
+                        Rp {{printf "%.0f" .BoardingPass.UnitNetPrice}}
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="ticket-label">Status Tiket</div>
+                    <div class="ticket-value">{{.BoardingPass.Status}}</div>
+                </div>
+
+            </div>
+
+            <div class="qr-section">
+                <h5 class="fw-bold">QR Code Tiket</h5>
+                <p class="text-muted small">
+                    Tunjukkan QR Code ini kepada petugas Gatekeeper.
+                </p>
+
+                <div
+                    id="qrcode"
+                    data-ticket-code="{{.BoardingPass.TicketCode}}">
+                </div>
+
+                <div class="ticket-code">
+                    {{.BoardingPass.TicketCode}}
+                </div>
+            </div>
+
+        </div>
+
+        <div class="boarding-footer">
+            <small>
+                Terima kasih telah menggunakan KampusTix.
+                Simpan tiket ini dan tunjukkan saat memasuki event.
+            </small>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const qrElement = document.getElementById("qrcode");
+        const ticketCode = qrElement.dataset.ticketCode;
+
+        if (typeof QRCode !== "undefined" && ticketCode) {
+            new QRCode(qrElement, {
+                text: ticketCode,
+                width: 150,
+                height: 150,
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        } else {
+            qrElement.textContent = "QR Code tidak dapat dimuat.";
+        }
+    });
+</script>
+{{end}}

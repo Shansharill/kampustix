@@ -1,3 +1,30 @@
 package model
 
-// TODO: Placeholder gatekeeper.go
+import "time"
+
+// GatekeeperTicket menyimpan informasi tiket
+// yang dibutuhkan untuk proses validasi dan check-in.
+type GatekeeperTicket struct {
+	ID          int64      `json:"id"`
+	TicketCode  string     `json:"ticket_code"`
+	HolderName  string     `json:"holder_name"`
+	HolderEmail string     `json:"holder_email"`
+	Status      string     `json:"status"`
+	CheckedInAt *time.Time `json:"checked_in_at"`
+	CheckedInBy *int64     `json:"checked_in_by"`
+}
+
+// BoardingPass menyimpan informasi lengkap untuk cetak tiket.
+type BoardingPass struct {
+	TicketCode  string    `json:"ticket_code"`
+	HolderName  string    `json:"holder_name"`
+	HolderEmail string    `json:"holder_email"`
+	UnitNetPrice float64  `json:"unit_net_price"`
+	Status      string    `json:"status"`
+
+	EventName    string    `json:"event_name"`
+	Venue        string    `json:"venue"`
+	EventDate    time.Time `json:"event_date"`
+	CategoryName string    `json:"category_name"`
+	TierName     string    `json:"tier_name"`
+}
