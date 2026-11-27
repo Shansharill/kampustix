@@ -24,11 +24,11 @@ erDiagram
 
     users {
         int id PK
-        varchar(100) full_name
+        varchar(100) name
         varchar(120) email UK
         varchar(255) password_hash
         enum role "BUYER, ADMIN, GATEKEEPER"
-        datetime created_at
+        timestamp created_at
     }
 
     events {
@@ -41,15 +41,15 @@ erDiagram
         int total_capacity
         enum status "UPCOMING, ACTIVE, COMPLETED, CANCELLED"
         int created_by FK
-        datetime created_at
+        timestamp created_at
     }
 
     ticket_categories {
         int id PK
         int event_id FK
-        varchar(80) name
+        varchar(80) category_name
         int total_quota
-        datetime created_at
+        timestamp created_at
     }
 
     ticket_tiers {
@@ -62,7 +62,7 @@ erDiagram
         int used_quota
         datetime start_date
         datetime end_date
-        datetime created_at
+        timestamp created_at
     }
 
     promo_codes {
@@ -75,7 +75,7 @@ erDiagram
         int used_count
         datetime valid_until
         tinyint is_active
-        datetime created_at
+        timestamp created_at
     }
 
     orders {
@@ -86,13 +86,13 @@ erDiagram
         int tier_id FK
         int promo_code_id FK
         tinyint quantity
-        decimal subtotal_amount
+        decimal total_gross
         decimal discount_amount
-        decimal total_amount
+        decimal total_net
         enum status "PENDING, PAID, EXPIRED, CANCELLED"
         datetime expires_at
         datetime paid_at
-        datetime created_at
+        timestamp created_at
     }
 
     tickets {
@@ -111,7 +111,7 @@ erDiagram
         enum status "RESERVED, ACTIVE, USED, REFUNDED, CANCELLED"
         datetime checked_in_at
         int checked_in_by FK
-        datetime created_at
+        timestamp created_at
     }
 
     refunds {
@@ -119,11 +119,11 @@ erDiagram
         int ticket_id FK
         int order_id FK
         int requested_by FK
-        enum refund_type "BUYER_INITIATED, EVENT_CANCELLED"
-        decimal refund_percentage
+        decimal refund_percent
         decimal refund_amount
+        enum refund_type "BUYER_INITIATED, EVENT_CANCELLED"
         varchar(255) reason
-        datetime refunded_at
+        timestamp created_at
     }
 ```
 
@@ -131,7 +131,7 @@ erDiagram
 
 ## 2. Skrip DDL Resmi (MySQL 8 InnoDB - UTF8MB4)
 
-Skrip ini telah disinkronkan dan menyempurnakan celah inkonsistensi antara `PRD 1.pdf` dan `ERD.pdf`.
+Skrip ini telah disinkronkan 100% dengan `PRD_FINAL.md` dan file DDL eksekusi resmi `db/schema.sql`.
 
 ```sql
 -- Nonaktifkan pengecekan foreign key sementara untuk inisialisasi bersih
@@ -151,11 +151,11 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- 1. TABEL PENGGUNA (Auth & RBAC) - Modul Anggota 1
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(100) NOT NULL,
+    name VARCHAR(100) NOT NULL,
     email VARCHAR(120) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('BUYER', 'ADMIN', 'GATEKEEPER') NOT NULL DEFAULT 'BUYER',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 2. TABEL EVENT MASTER - Modul Anggota 2
@@ -169,7 +169,7 @@ CREATE TABLE events (
     total_capacity INT NOT NULL,
     status ENUM('UPCOMING', 'ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'UPCOMING',
     created_by INT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -177,9 +177,9 @@ CREATE TABLE events (
 CREATE TABLE ticket_categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     event_id INT NOT NULL,
-    name VARCHAR(80) NOT NULL,
+    category_name VARCHAR(80) NOT NULL,
     total_quota INT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -194,7 +194,7 @@ CREATE TABLE ticket_tiers (
     used_quota INT NOT NULL DEFAULT 0,
     start_date DATETIME NOT NULL,
     end_date DATETIME NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES ticket_categories(id) ON DELETE CASCADE,
     CONSTRAINT chk_tier_quota CHECK (used_quota <= quota)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -210,7 +210,7 @@ CREATE TABLE promo_codes (
     used_count INT NOT NULL DEFAULT 0,
     valid_until DATETIME NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
     FOREIGN KEY (category_id) REFERENCES ticket_categories(id) ON DELETE SET NULL,
     CONSTRAINT chk_promo_uses CHECK (used_count <= max_uses)
@@ -225,13 +225,13 @@ CREATE TABLE orders (
     tier_id INT NOT NULL,
     promo_code_id INT NULL,
     quantity TINYINT NOT NULL,
-    subtotal_amount DECIMAL(12, 2) NOT NULL,
+    total_gross DECIMAL(12, 2) NOT NULL,
     discount_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    total_amount DECIMAL(12, 2) NOT NULL,
+    total_net DECIMAL(12, 2) NOT NULL,
     status ENUM('PENDING', 'PAID', 'EXPIRED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
     expires_at DATETIME NOT NULL,
     paid_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE RESTRICT,
     FOREIGN KEY (tier_id) REFERENCES ticket_tiers(id) ON DELETE RESTRICT,
@@ -241,21 +241,21 @@ CREATE TABLE orders (
 -- 7. TABEL TIKET INDIVIDUAL (BOARDING PASS) - Modul Anggota 3, 5, 6
 CREATE TABLE tickets (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    ticket_code VARCHAR(40) NOT NULL UNIQUE,
     order_id INT NOT NULL,
     event_id INT NOT NULL,
     category_id INT NOT NULL,
     tier_id INT NOT NULL,
-    unit_base_price DECIMAL(12, 2) NOT NULL,
-    unit_net_price DECIMAL(12, 2) NOT NULL,
+    ticket_code VARCHAR(40) NOT NULL UNIQUE,
     holder_name VARCHAR(100) NOT NULL,
     holder_email VARCHAR(120) NOT NULL,
+    unit_base_price DECIMAL(12, 2) NOT NULL,
+    unit_net_price DECIMAL(12, 2) NOT NULL,
     transfer_count TINYINT NOT NULL DEFAULT 0,
     transferred_at DATETIME NULL,
     status ENUM('RESERVED', 'ACTIVE', 'USED', 'REFUNDED', 'CANCELLED') NOT NULL DEFAULT 'RESERVED',
     checked_in_at DATETIME NULL,
     checked_in_by INT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE RESTRICT,
     FOREIGN KEY (category_id) REFERENCES ticket_categories(id) ON DELETE RESTRICT,
@@ -270,11 +270,11 @@ CREATE TABLE refunds (
     ticket_id INT NOT NULL UNIQUE,
     order_id INT NOT NULL,
     requested_by INT NOT NULL,
-    refund_type ENUM('BUYER_INITIATED', 'EVENT_CANCELLED') NOT NULL,
-    refund_percentage DECIMAL(5, 2) NOT NULL,
+    refund_percent DECIMAL(5, 2) NOT NULL,
     refund_amount DECIMAL(12, 2) NOT NULL,
+    refund_type ENUM('BUYER_INITIATED', 'EVENT_CANCELLED') NOT NULL,
     reason VARCHAR(255) NULL,
-    refunded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
     FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE RESTRICT

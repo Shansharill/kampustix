@@ -324,7 +324,7 @@ CREATE TABLE events (
 CREATE TABLE ticket_categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     event_id INT NOT NULL,
-    category_name VARCHAR(50) NOT NULL,
+    category_name VARCHAR(80) NOT NULL,
     total_quota INT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
@@ -334,9 +334,9 @@ CREATE TABLE ticket_categories (
 CREATE TABLE ticket_tiers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     category_id INT NOT NULL,
-    tier_name VARCHAR(50) NOT NULL,
+    tier_name VARCHAR(80) NOT NULL,
     sequence_order INT NOT NULL,
-    price DECIMAL(10, 2) NOT NULL,
+    price DECIMAL(12, 2) NOT NULL,
     quota INT NOT NULL,
     used_quota INT NOT NULL DEFAULT 0,
     start_date DATETIME NOT NULL,
@@ -372,9 +372,9 @@ CREATE TABLE orders (
     tier_id INT NOT NULL,
     promo_code_id INT NULL,
     quantity TINYINT NOT NULL,
-    total_gross DECIMAL(10, 2) NOT NULL,
-    discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-    total_net DECIMAL(10, 2) NOT NULL,
+    total_gross DECIMAL(12, 2) NOT NULL,
+    discount_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    total_net DECIMAL(12, 2) NOT NULL,
     status ENUM('PENDING', 'PAID', 'EXPIRED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
     expires_at DATETIME NOT NULL,
     paid_at DATETIME NULL,
@@ -395,8 +395,8 @@ CREATE TABLE tickets (
     ticket_code VARCHAR(40) NOT NULL UNIQUE,
     holder_name VARCHAR(100) NOT NULL,
     holder_email VARCHAR(120) NOT NULL,
-    unit_base_price DECIMAL(10, 2) NOT NULL,
-    unit_net_price DECIMAL(10, 2) NOT NULL,
+    unit_base_price DECIMAL(12, 2) NOT NULL,
+    unit_net_price DECIMAL(12, 2) NOT NULL,
     transfer_count TINYINT NOT NULL DEFAULT 0,
     transferred_at DATETIME NULL,
     status ENUM('RESERVED', 'ACTIVE', 'USED', 'REFUNDED', 'CANCELLED') NOT NULL DEFAULT 'RESERVED',
@@ -418,7 +418,7 @@ CREATE TABLE refunds (
     order_id INT NOT NULL,
     requested_by INT NOT NULL,
     refund_percent DECIMAL(5, 2) NOT NULL,
-    refund_amount DECIMAL(10, 2) NOT NULL,
+    refund_amount DECIMAL(12, 2) NOT NULL,
     refund_type ENUM('BUYER_INITIATED', 'EVENT_CANCELLED') NOT NULL,
     reason VARCHAR(255) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -458,7 +458,7 @@ Table events {
 Table ticket_categories {
   id int [pk, increment]
   event_id int [ref: > events.id, not null]
-  category_name varchar(50) [not null]
+  category_name varchar(80) [not null]
   total_quota int [not null]
   created_at timestamp [default: `CURRENT_TIMESTAMP`]
 }
@@ -466,9 +466,9 @@ Table ticket_categories {
 Table ticket_tiers {
   id int [pk, increment]
   category_id int [ref: > ticket_categories.id, not null]
-  tier_name varchar(50) [not null]
+  tier_name varchar(80) [not null]
   sequence_order int [not null]
-  price decimal(10,2) [not null]
+  price decimal(12,2) [not null]
   quota int [not null]
   used_quota int [default: 0, not null]
   start_date datetime [not null]
@@ -497,9 +497,9 @@ Table orders {
   tier_id int [ref: > ticket_tiers.id, not null]
   promo_code_id int [ref: > promo_codes.id, null]
   quantity tinyint [not null]
-  total_gross decimal(10,2) [not null]
-  discount_amount decimal(10,2) [default: 0.00, not null]
-  total_net decimal(10,2) [not null]
+  total_gross decimal(12,2) [not null]
+  discount_amount decimal(12,2) [default: 0.00, not null]
+  total_net decimal(12,2) [not null]
   status varchar(20) [note: 'PENDING, PAID, EXPIRED, CANCELLED', default: 'PENDING', not null]
   expires_at datetime [not null]
   paid_at datetime [null]
@@ -513,8 +513,8 @@ Table tickets {
   event_id int [ref: > events.id, not null]
   category_id int [ref: > ticket_categories.id, not null]
   tier_id int [ref: > ticket_tiers.id, not null]
-  unit_base_price decimal(10,2) [not null]
-  unit_net_price decimal(10,2) [not null]
+  unit_base_price decimal(12,2) [not null]
+  unit_net_price decimal(12,2) [not null]
   holder_name varchar(100) [not null]
   holder_email varchar(120) [not null]
   transfer_count tinyint [default: 0, not null]
@@ -531,7 +531,7 @@ Table refunds {
   order_id int [ref: > orders.id, not null]
   requested_by int [ref: > users.id, not null]
   refund_percent decimal(5,2) [not null]
-  refund_amount decimal(10,2) [not null]
+  refund_amount decimal(12,2) [not null]
   refund_type varchar(30) [note: 'BUYER_INITIATED, EVENT_CANCELLED', not null]
   reason varchar(255) [null]
   created_at timestamp [default: `CURRENT_TIMESTAMP`]
