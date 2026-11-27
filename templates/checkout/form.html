@@ -1,1 +1,78 @@
-<!-- TODO: Placeholder form.html -->
+{{define "content"}}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-primary text-white py-3">
+                    <h4 class="mb-0 fw-bold">Checkout Pemesanan Tiket</h4>
+                    <small>Kuota akan dikunci selama 15 menit setelah Anda menekan tombol Checkout</small>
+                </div>
+                <div class="card-body p-4">
+                    <form action="/checkout" method="POST" id="checkoutForm">
+                        <!-- Parameter Event & Tier yang dikirim dari halaman Detail Event -->
+                        <input type="hidden" name="event_id" value="{{.EventID}}">
+                        <input type="hidden" name="tier_id" value="{{.TierID}}">
+
+                        <div class="mb-4">
+                            <label for="quantitySelect" class="form-label fw-semibold">Jumlah Tiket (Maksimal 4 Tiket)</label>
+                            <select class="form-select" id="quantitySelect" name="quantity" required onchange="renderHolderFields()">
+                                <option value="1" selected>1 Tiket</option>
+                                <option value="2">2 Tiket</option>
+                                <option value="3">3 Tiket</option>
+                                <option value="4">4 Tiket</option>
+                            </select>
+                        </div>
+
+                        <hr class="my-4">
+                        <h5 class="fw-bold mb-3">Identitas Pemegang Tiket</h5>
+                        <p class="text-muted small">Setiap tiket wajib memiliki nama dan email masing-masing penonton untuk keperluan pemeriksaan di pintu masuk (Gate Check-in).</p>
+
+                        <!-- Container dinamis 1-4 form pemegang tiket -->
+                        <div id="holdersContainer"></div>
+
+                        <hr class="my-4">
+                        <div class="mb-4">
+                            <label for="promo_code" class="form-label fw-semibold">Kode Promo (Opsional)</label>
+                            <input type="text" class="form-control text-uppercase" id="promo_code" name="promo_code" placeholder="Masukkan kode voucher bila ada">
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                                Kunci Kuota & Lanjutkan Pembayaran
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function renderHolderFields() {
+    const qty = parseInt(document.getElementById('quantitySelect').value, 10);
+    const container = document.getElementById('holdersContainer');
+    container.innerHTML = '';
+
+    for (let i = 1; i <= qty; i++) {
+        container.innerHTML += `
+            <div class="p-3 mb-3 border rounded bg-light">
+                <h6 class="fw-bold text-primary mb-3">Data Pemegang Tiket #${i}</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Nama Lengkap Sesuai Identitas</label>
+                        <input type="text" name="holder_name[]" class="form-control" placeholder="Nama Penonton ${i}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Alamat Email Aktif</label>
+                        <input type="email" name="holder_email[]" class="form-control" placeholder="email${i}@kampus.ac.id" required>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+// Jalankan saat halaman pertama kali dimuat (default 1 tiket)
+document.addEventListener('DOMContentLoaded', renderHolderFields);
+</script>
+{{end}}

@@ -47,6 +47,11 @@ func main() {
 		View:          view,
 	}
 
+	// PERAKITAN DEPENDENCY (Anggota 3: Order & Checkout)
+	orderRepo := repository.NewOrderRepository(db)
+	orderSvc := service.NewOrderService(orderRepo)
+	orderHandler := handler.NewOrderHandler(orderSvc, view)
+
 	// 5. TAHAP PENDAFTARAN RUTE (ROUTING GO 1.22+)
 	mux := http.NewServeMux()
 
@@ -101,6 +106,36 @@ func main() {
 	mux.Handle("GET /gatekeeper/scan", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ScanPage)))
 	mux.Handle("POST /gatekeeper/validate", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ValidateTicket)))
 	mux.Handle("GET /gatekeeper/ticket/{code}/print", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.PrintTicket)))
+
+	// --- F. Rute Terproteksi Buyer (Anggota 3: Order & Checkout) ---
+
+	// Menampilkan halaman checkout
+	mux.Handle("GET /checkout",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(orderHandler.ShowCheckoutForm),
+		),
+	)
+
+	// Memproses checkout dan membuat pesanan
+	mux.Handle("POST /checkout",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(orderHandler.HandleCheckout),
+		),
+	)
+
+	// Menampilkan halaman pembayaran
+	mux.Handle("GET /orders/{id}/payment",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(orderHandler.ShowPaymentPage),
+		),
+	)
+
+	// Simulasi pembayaran berhasil
+	mux.Handle("POST /orders/{id}/pay-simulate",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(orderHandler.HandlePaySimulate),
+		),
+	)
 
 	// 6. MIDDLEWARE GLOBAL CHAINING
 	// Request Masuk -> Logging -> Authenticate (Periksa Cookie) -> Mux Router
