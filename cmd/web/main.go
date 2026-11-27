@@ -98,9 +98,28 @@ func main() {
 	})))
 
 	// --- E. Rute Terproteksi Gatekeeper / Pintu Masuk (Anggota 6) ---
-	mux.Handle("GET /gatekeeper/scan", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ScanPage)))
-	mux.Handle("POST /gatekeeper/validate", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ValidateTicket)))
-	mux.Handle("GET /gatekeeper/ticket/{code}/print", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.PrintTicket)))
+	mux.Handle("GET /gatekeeper/scan",
+		authMw.RequireRole("GATEKEEPER", "ADMIN")(
+			http.HandlerFunc(gatekeeperHandler.ScanPage),
+		),
+	)
+
+	mux.Handle("POST /gatekeeper/validate",
+		authMw.RequireRole("GATEKEEPER", "ADMIN")(
+			http.HandlerFunc(gatekeeperHandler.ValidateTicket),
+		),
+	)
+
+	mux.Handle("GET /gatekeeper/ticket/{code}/print",
+		authMw.RequireRole("GATEKEEPER", "ADMIN")(
+			http.HandlerFunc(gatekeeperHandler.PrintTicket),
+		),
+	)
+	mux.Handle("GET /tickets/{code}/print",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(gatekeeperHandler.PrintBuyerTicket),
+		),
+	)
 
 	// 6. MIDDLEWARE GLOBAL CHAINING
 	// Request Masuk -> Logging -> Authenticate (Periksa Cookie) -> Mux Router

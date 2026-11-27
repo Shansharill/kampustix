@@ -10,17 +10,18 @@ type GatekeeperTicket struct {
 	HolderName  string     `json:"holder_name"`
 	HolderEmail string     `json:"holder_email"`
 	Status      string     `json:"status"`
+	EventStatus string     `json:"event_status"`
 	CheckedInAt *time.Time `json:"checked_in_at"`
 	CheckedInBy *int64     `json:"checked_in_by"`
 }
 
 // BoardingPass menyimpan informasi lengkap untuk cetak tiket.
 type BoardingPass struct {
-	TicketCode  string    `json:"ticket_code"`
-	HolderName  string    `json:"holder_name"`
-	HolderEmail string    `json:"holder_email"`
-	UnitNetPrice float64  `json:"unit_net_price"`
-	Status      string    `json:"status"`
+	TicketCode   string  `json:"ticket_code"`
+	HolderName   string  `json:"holder_name"`
+	HolderEmail  string  `json:"holder_email"`
+	UnitNetPrice float64 `json:"unit_net_price"`
+	Status       string  `json:"status"`
 
 	EventName    string    `json:"event_name"`
 	Venue        string    `json:"venue"`

@@ -39,20 +39,6 @@
         Masukkan kode tiket untuk melakukan validasi check-in.
     </p>
 
-    {{if .Success}}
-        <div class="alert alert-success">
-            <strong>Berhasil!</strong>
-            <p class="mb-0">{{.Success}}</p>
-        </div>
-    {{end}}
-
-    {{if .Error}}
-        <div class="alert alert-danger">
-            <strong>Validasi gagal!</strong>
-            <p class="mb-0">{{.Error}}</p>
-        </div>
-    {{end}}
-
     <form action="/gatekeeper/validate" method="POST">
         <label for="ticket_code" class="form-label fw-bold">
             Kode Tiket
@@ -86,11 +72,20 @@
             <p><strong>Email:</strong> {{.Ticket.HolderEmail}}</p>
             <p><strong>Status:</strong> {{.Ticket.Status}}</p>
 
-            {{if .Ticket.CheckedInAt}}
-                <p>
-                    <strong>Waktu Check-in:</strong>
-                    {{.Ticket.CheckedInAt.Format "02-01-2006 15:04:05"}}
-                </p>
+            {{if eq .Ticket.Status "USED"}}
+                {{if .Ticket.CheckedInAt}}
+                    <div class="alert alert-warning mt-3">
+                        <strong>Tiket sudah digunakan!</strong>
+                        <p class="mb-0">
+                            Waktu Check-in:
+                            {{.Ticket.CheckedInAt.Format "02-01-2006 15:04:05"}}
+                        </p>
+                    </div>
+                {{else}}
+                    <div class="alert alert-warning mt-3">
+                        Tiket sudah digunakan, tetapi waktu check-in tidak tersedia.
+                    </div>
+                {{end}}
             {{end}}
     
     {{if .Success}}

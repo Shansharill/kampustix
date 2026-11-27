@@ -14,20 +14,27 @@ type GatekeeperRepo struct {
 }
 
 // FindByCode mencari tiket berdasarkan kode tiket.
-func (r *GatekeeperRepo) FindByCode(ctx context.Context, code string) (*model.GatekeeperTicket, error) {
+
+func (r *GatekeeperRepo) FindByCode(
+	ctx context.Context,
+	code string,
+) (*model.GatekeeperTicket, error) {
+
 	query := `
-		SELECT
-			id,
-			ticket_code,
-			holder_name,
-			holder_email,
-			status,
-			checked_in_at,
-			checked_in_by
-		FROM tickets
-		WHERE ticket_code = ?
-		LIMIT 1
-	`
+        SELECT
+            t.id,
+            t.ticket_code,
+            t.holder_name,
+            t.holder_email,
+            t.status,
+            e.status AS event_status,
+            t.checked_in_at,
+            t.checked_in_by
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        WHERE t.ticket_code = ?
+        LIMIT 1
+    `
 
 	row := r.DB.QueryRowContext(ctx, query, code)
 
@@ -39,6 +46,7 @@ func (r *GatekeeperRepo) FindByCode(ctx context.Context, code string) (*model.Ga
 		&ticket.HolderName,
 		&ticket.HolderEmail,
 		&ticket.Status,
+		&ticket.EventStatus,
 		&ticket.CheckedInAt,
 		&ticket.CheckedInBy,
 	)
@@ -62,13 +70,16 @@ func (r *GatekeeperRepo) CheckIn(
 ) (bool, error) {
 
 	query := `
-        UPDATE tickets
+        UPDATE tickets t
+        JOIN events e ON t.event_id = e.id
         SET
-            status = 'USED',
-            checked_in_at = NOW(),
-            checked_in_by = ?
-        WHERE ticket_code = ?
-        AND status = 'ACTIVE'
+            t.status = 'USED',
+            t.checked_in_at = NOW(),
+            t.checked_in_by = ?
+        WHERE
+            t.ticket_code = ?
+            AND t.status = 'ACTIVE'
+            AND e.status = 'ACTIVE'
     `
 
 	result, err := r.DB.ExecContext(ctx, query, gatekeeperID, code)
@@ -113,6 +124,67 @@ func (r *GatekeeperRepo) FindBoardingPass(
 	var boardingPass model.BoardingPass
 
 	err := r.DB.QueryRowContext(ctx, query, code).Scan(
+		&boardingPass.TicketCode,
+		&boardingPass.HolderName,
+		&boardingPass.HolderEmail,
+		&boardingPass.UnitNetPrice,
+		&boardingPass.Status,
+		&boardingPass.EventName,
+		&boardingPass.Venue,
+		&boardingPass.EventDate,
+		&boardingPass.CategoryName,
+		&boardingPass.TierName,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &boardingPass, nil
+}
+
+// FindBoardingPassByBuyer mengambil boarding pass
+// berdasarkan kode tiket dan ID pemilik order.
+func (r *GatekeeperRepo) FindBoardingPassByBuyer(
+	ctx context.Context,
+	code string,
+	buyerID int64,
+) (*model.BoardingPass, error) {
+
+	query := `
+        SELECT
+            t.ticket_code,
+            t.holder_name,
+            t.holder_email,
+            t.unit_net_price,
+            t.status,
+            e.title AS event_name,
+            e.venue,
+            e.event_date,
+            c.category_name,
+            tr.tier_name
+        FROM tickets t
+        JOIN orders o ON t.order_id = o.id
+        JOIN events e ON t.event_id = e.id
+        JOIN ticket_categories c ON t.category_id = c.id
+        JOIN ticket_tiers tr ON t.tier_id = tr.id
+        WHERE t.ticket_code = ?
+        AND o.user_id = ?
+        LIMIT 1
+    `
+
+	var boardingPass model.BoardingPass
+
+	err := r.DB.QueryRowContext(
+		ctx,
+		query,
+		code,
+		buyerID,
+	).Scan(
 		&boardingPass.TicketCode,
 		&boardingPass.HolderName,
 		&boardingPass.HolderEmail,
