@@ -39,6 +39,14 @@ func main() {
 	authMw := middleware.NewAuthMiddleware(userRepo)
 	authHandler := &handler.AuthHandler{AuthSvc: authSvc, View: view}
 
+	// 4b. PERAKITAN DEPENDENCY (Anggota 6: Gatekeeper)
+	gatekeeperRepo := &repository.GatekeeperRepo{DB: db}
+	gatekeeperSvc := &service.GatekeeperService{Repo: gatekeeperRepo}
+	gatekeeperHandler := &handler.GatekeeperHandler{
+		GatekeeperSvc: gatekeeperSvc,
+		View:          view,
+	}
+
 	// 5. TAHAP PENDAFTARAN RUTE (ROUTING GO 1.22+)
 	mux := http.NewServeMux()
 
@@ -89,13 +97,10 @@ func main() {
 		})
 	})))
 
-	// --- E. Rute Terproteksi Gatekeeper / Pintu Masuk (Placeholder Anggota 6) ---
-	mux.Handle("GET /gatekeeper/scan", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		view.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title": "Pindai Tiket - Gatekeeper",
-			"User":  middleware.CurrentUser(r),
-		})
-	})))
+	// --- E. Rute Terproteksi Gatekeeper / Pintu Masuk (Anggota 6) ---
+	mux.Handle("GET /gatekeeper/scan", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ScanPage)))
+	mux.Handle("POST /gatekeeper/validate", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ValidateTicket)))
+	mux.Handle("GET /gatekeeper/ticket/{code}/print", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.PrintTicket)))
 
 	// 6. MIDDLEWARE GLOBAL CHAINING
 	// Request Masuk -> Logging -> Authenticate (Periksa Cookie) -> Mux Router
