@@ -203,7 +203,11 @@ func (h *OrderHandler) HandlePaySimulate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	http.Redirect(w, r, "/my-tickets?pesan=Pembayaran+berhasil.+E-tiket+Anda+telah+aktif", http.StatusSeeOther)
+	// Setelah transaksi pembayaran berhasil, tampilkan kembali halaman ringkasan order.
+	// Handler GET akan membaca status PAID dan tiket ACTIVE langsung dari database.
+	destination := "/orders/" + strconv.Itoa(orderID) + "/payment?pesan=" +
+		url.QueryEscape("Pembayaran berhasil. Status pesanan PAID dan tiket telah aktif.")
+	http.Redirect(w, r, destination, http.StatusSeeOther)
 }
 
 // HandleCancelOrder memproses pembatalan manual buyer sebelum waktu hold 15 menit habis.
