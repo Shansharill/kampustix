@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"database/sql"
+	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -22,15 +25,16 @@ func NewOrderHandler(orderService *service.OrderService, rd *Renderer) *OrderHan
 	}
 }
 
-// Helper mengambil ID user yang sedang login dari middleware Anggota 1
+// getLoggedUserID mengambil ID buyer dari session yang sudah diperiksa middleware.
 func getLoggedUserID(r *http.Request) int {
-	if u := middleware.CurrentUser(r); u != nil {
-		return int(u.ID)
+	if user := middleware.CurrentUser(r); user != nil {
+		return int(user.ID)
 	}
 	return 0
 }
 
-// 0. GET /checkout (Menampilkan halaman form checkout 1-4 tiket)
+// ShowCheckoutForm menampilkan form checkout.
+// event_id dan tier_id harus berasal dari tier yang dipilih; tidak ada default ID buatan.
 func (h *OrderHandler) ShowCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
 	if user == nil {
@@ -38,26 +42,27 @@ func (h *OrderHandler) ShowCheckoutForm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	eventID, _ := strconv.Atoi(r.URL.Query().Get("event_id"))
-	tierID, _ := strconv.Atoi(r.URL.Query().Get("tier_id"))
-	if eventID == 0 {
-		eventID = 1
-	}
-	if tierID == 0 {
-		tierID = 1
+	eventID, eventErr := strconv.Atoi(r.URL.Query().Get("event_id"))
+	tierID, tierErr := strconv.Atoi(r.URL.Query().Get("tier_id"))
+	checkoutReady := eventErr == nil && tierErr == nil && eventID > 0 && tierID > 0
+
+	pesan := r.URL.Query().Get("pesan")
+	if !checkoutReady && pesan == "" {
+		pesan = "Pilih event dan tier tiket terlebih dahulu. Untuk pengujian langsung, buka /checkout?event_id=ID_EVENT&tier_id=ID_TIER."
 	}
 
 	data := map[string]any{
-		"Judul":   "Checkout Tiket - KampusTix",
-		"User":    user,
-		"Pesan":   r.URL.Query().Get("pesan"),
-		"EventID": eventID,
-		"TierID":  tierID,
+		"Title":         "Checkout Tiket - KampusTix",
+		"User":          user,
+		"Pesan":         pesan,
+		"EventID":       eventID,
+		"TierID":        tierID,
+		"CheckoutReady": checkoutReady,
 	}
 	h.rd.Tampil(w, "checkout/form.html", data)
 }
 
-// 1. POST /checkout (Memproses form pemesanan 1-4 tiket & kunci kuota 15 menit)
+// HandleCheckout memproses POST /checkout dan membuat order dengan hold 15 menit.
 func (h *OrderHandler) HandleCheckout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -71,23 +76,37 @@ func (h *OrderHandler) HandleCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Gagal membaca form", http.StatusBadRequest)
+		http.Error(w, "Gagal membaca form checkout", http.StatusBadRequest)
 		return
 	}
 
-	eventID, _ := strconv.Atoi(r.FormValue("event_id"))
-	tierID, _ := strconv.Atoi(r.FormValue("tier_id"))
-	quantity, _ := strconv.Atoi(r.FormValue("quantity"))
-	promoCode := r.FormValue("promo_code")
+	eventID, eventErr := strconv.Atoi(r.FormValue("event_id"))
+	tierID, tierErr := strconv.Atoi(r.FormValue("tier_id"))
+	quantity, quantityErr := strconv.Atoi(r.FormValue("quantity"))
+	if eventErr != nil || tierErr != nil || quantityErr != nil || eventID <= 0 || tierID <= 0 {
+		http.Redirect(w, r, "/checkout?pesan="+url.QueryEscape("Event, tier, atau jumlah tiket tidak valid."), http.StatusSeeOther)
+		return
+	}
 
 	names := r.Form["holder_name[]"]
 	emails := r.Form["holder_email[]"]
+	holderCount := len(names)
+	if len(emails) > holderCount {
+		holderCount = len(emails)
+	}
 
-	var holders []model.TicketHolderInput
-	for i := 0; i < len(names) && i < len(emails); i++ {
+	holders := make([]model.TicketHolderInput, 0, holderCount)
+	for i := 0; i < holderCount; i++ {
+		var name, email string
+		if i < len(names) {
+			name = names[i]
+		}
+		if i < len(emails) {
+			email = emails[i]
+		}
 		holders = append(holders, model.TicketHolderInput{
-			HolderName:  names[i],
-			HolderEmail: emails[i],
+			HolderName:  name,
+			HolderEmail: email,
 		})
 	}
 
@@ -95,22 +114,24 @@ func (h *OrderHandler) HandleCheckout(w http.ResponseWriter, r *http.Request) {
 		UserID:    userID,
 		EventID:   eventID,
 		TierID:    tierID,
-		PromoCode: promoCode,
+		PromoCode: r.FormValue("promo_code"),
 		Quantity:  quantity,
 		Holders:   holders,
 	}
 
 	orderID, err := h.orderService.ProcessCheckout(r.Context(), req)
 	if err != nil {
-		pesanErr := url.QueryEscape("Checkout Gagal: " + err.Error())
-		http.Redirect(w, r, "/checkout?event_id="+strconv.Itoa(eventID)+"&tier_id="+strconv.Itoa(tierID)+"&pesan="+pesanErr, http.StatusSeeOther)
+		pesanErr := url.QueryEscape("Checkout gagal: " + err.Error())
+		destination := "/checkout?event_id=" + strconv.Itoa(eventID) +
+			"&tier_id=" + strconv.Itoa(tierID) + "&pesan=" + pesanErr
+		http.Redirect(w, r, destination, http.StatusSeeOther)
 		return
 	}
 
 	http.Redirect(w, r, "/orders/"+strconv.Itoa(orderID)+"/payment", http.StatusSeeOther)
 }
 
-// 2. GET /orders/{id}/payment (Halaman Konfirmasi Pembayaran & Countdown 15 Menit)
+// ShowPaymentPage menampilkan detail order dan countdown berdasarkan expires_at di MySQL.
 func (h *OrderHandler) ShowPaymentPage(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
 	if user == nil {
@@ -119,8 +140,8 @@ func (h *OrderHandler) ShowPaymentPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	orderID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "ID Pesanan tidak valid", http.StatusBadRequest)
+	if err != nil || orderID <= 0 {
+		http.Error(w, "ID pesanan tidak valid", http.StatusBadRequest)
 		return
 	}
 
@@ -130,12 +151,17 @@ func (h *OrderHandler) ShowPaymentPage(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "403 Forbidden: Anda bukan pemilik pesanan ini", http.StatusForbidden)
 			return
 		}
-		http.Error(w, "Pesanan tidak ditemukan", http.StatusNotFound)
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "pesanan tidak ditemukan" {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("gagal membuka halaman pembayaran order %d: %v", orderID, err)
+		http.Error(w, "Terjadi kesalahan saat mengambil data pembayaran", http.StatusInternalServerError)
 		return
 	}
 
 	data := map[string]any{
-		"Judul":            "Konfirmasi Pembayaran - KampusTix",
+		"Title":            "Konfirmasi Pembayaran - KampusTix",
 		"User":             user,
 		"Pesan":            r.URL.Query().Get("pesan"),
 		"Order":            pageData.Order,
@@ -148,7 +174,7 @@ func (h *OrderHandler) ShowPaymentPage(w http.ResponseWriter, r *http.Request) {
 	h.rd.Tampil(w, "checkout/payment.html", data)
 }
 
-// 3. POST /orders/{id}/pay-simulate (Eksekusi Simulasi Pembayaran Berhasil)
+// HandlePaySimulate memproses POST /orders/{id}/pay-simulate.
 func (h *OrderHandler) HandlePaySimulate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -162,21 +188,55 @@ func (h *OrderHandler) HandlePaySimulate(w http.ResponseWriter, r *http.Request)
 	}
 
 	orderID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "ID Pesanan tidak valid", http.StatusBadRequest)
+	if err != nil || orderID <= 0 {
+		http.Error(w, "ID pesanan tidak valid", http.StatusBadRequest)
 		return
 	}
 
-	err = h.orderService.SimulatePayment(r.Context(), orderID, userID)
-	if err != nil {
+	if err := h.orderService.SimulatePayment(r.Context(), orderID, userID); err != nil {
 		if err.Error() == "FORBIDDEN" {
 			http.Error(w, "403 Forbidden: Anda tidak berhak membayar pesanan ini", http.StatusForbidden)
 			return
 		}
-		pesanErr := url.QueryEscape("Pembayaran Gagal: " + err.Error())
+		pesanErr := url.QueryEscape("Pembayaran gagal: " + err.Error())
 		http.Redirect(w, r, "/orders/"+strconv.Itoa(orderID)+"/payment?pesan="+pesanErr, http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/my-tickets?pesan=Pembayaran+Berhasil!+E-Tiket+Anda+Telah+Aktif", http.StatusSeeOther)
+	http.Redirect(w, r, "/my-tickets?pesan=Pembayaran+berhasil.+E-tiket+Anda+telah+aktif", http.StatusSeeOther)
+}
+
+// HandleCancelOrder memproses pembatalan manual buyer sebelum waktu hold 15 menit habis.
+func (h *OrderHandler) HandleCancelOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID := getLoggedUserID(r)
+	if userID == 0 {
+		http.Redirect(w, r, "/login?pesan=Silakan+masuk+terlebih+dahulu", http.StatusSeeOther)
+		return
+	}
+
+	orderID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil || orderID <= 0 {
+		http.Error(w, "ID pesanan tidak valid", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.orderService.CancelOrder(r.Context(), orderID, userID); err != nil {
+		if err.Error() == "FORBIDDEN" {
+			http.Error(w, "403 Forbidden: Anda bukan pemilik pesanan ini", http.StatusForbidden)
+			return
+		}
+		pesanErr := url.QueryEscape("Pesanan tidak dapat dibatalkan: " + err.Error())
+		http.Redirect(w, r, "/orders/"+strconv.Itoa(orderID)+"/payment?pesan="+pesanErr, http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r,
+		"/orders/"+strconv.Itoa(orderID)+"/payment?pesan=Pesanan+berhasil+dibatalkan.+Kuota+telah+dikembalikan",
+		http.StatusSeeOther,
+	)
 }

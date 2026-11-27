@@ -137,6 +137,13 @@ func main() {
 		),
 	)
 
+	// Pembatalan manual pesanan oleh BUYER sebelum hold 15 menit berakhir.
+	mux.Handle("POST /orders/{id}/cancel",
+		authMw.RequireRole("BUYER")(
+			http.HandlerFunc(orderHandler.HandleCancelOrder),
+		),
+	)
+
 	// 6. MIDDLEWARE GLOBAL CHAINING
 	// Request Masuk -> Logging -> Authenticate (Periksa Cookie) -> Mux Router
 	handlerDenganAuth := authMw.Authenticate(mux)

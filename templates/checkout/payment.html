@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="container my-5">
     <div class="row justify-content-center">
-        <div class="col-lg-8">
+        <div class="col-lg-9">
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
                     <div>
@@ -13,50 +13,56 @@
 
                 <div class="card-body p-4">
                     {{if eq .Order.Status "PENDING"}}
-                    <div class="alert alert-warning d-flex justify-content-between align-items-center">
+                    <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
                         <div>
                             <strong>Selesaikan pembayaran sebelum kuota dilepas!</strong><br>
-                            <small>Kuota tiket Anda sedang dikunci sementara (15-Minute Hold).</small>
+                            <small>Kuota tiket Anda sedang dikunci sementara selama maksimal 15 menit.</small>
                         </div>
-                        <div class="fs-3 fw-bold text-danger" id="countdownTimer">--:--</div>
+                        <div class="fs-3 fw-bold text-danger text-nowrap" id="countdownTimer">--:--</div>
                     </div>
                     {{else if eq .Order.Status "EXPIRED"}}
-                    <div class="alert alert-danger">
-                        <strong>Waktu Pembayaran Habis (EXPIRED)!</strong> Kuota tiket telah dikembalikan ke sistem. Silakan lakukan pemesanan ulang.
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Waktu pembayaran habis (EXPIRED).</strong>
+                        Kuota tiket dan pemakaian promo telah dikembalikan ke sistem. Silakan lakukan pemesanan ulang.
                     </div>
                     {{else if eq .Order.Status "PAID"}}
-                    <div class="alert alert-success">
-                        <strong>Pembayaran Lunas (PAID)!</strong> Seluruh e-tiket Anda sudah aktif.
+                    <div class="alert alert-success" role="alert">
+                        <strong>Pembayaran berhasil (PAID).</strong> Seluruh tiket dalam pesanan ini sudah aktif.
+                    </div>
+                    {{else if eq .Order.Status "CANCELLED"}}
+                    <div class="alert alert-secondary" role="alert">
+                        <strong>Pesanan dibatalkan (CANCELLED).</strong>
+                        Tiket RESERVED telah dibatalkan dan kuota tier serta pemakaian promo telah dikembalikan.
                     </div>
                     {{end}}
 
-                    <h6 class="fw-bold mt-4">Rincian Acara & Tiket</h6>
+                    <h6 class="fw-bold mt-4">Rincian Acara &amp; Tiket</h6>
                     <ul class="list-group mb-4">
-                        <li class="list-group-item d-flex justify-content-between">
+                        <li class="list-group-item d-flex justify-content-between gap-3">
                             <span>Nama Event</span>
-                            <strong>{{.EventTitle}}</strong>
+                            <strong class="text-end">{{.EventTitle}}</strong>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between">
+                        <li class="list-group-item d-flex justify-content-between gap-3">
                             <span>Kategori / Tier</span>
-                            <strong>{{.CategoryName}} - {{.TierName}} ({{.Order.Quantity}} Tiket)</strong>
+                            <strong class="text-end">{{.CategoryName}} - {{.TierName}} ({{.Order.Quantity}} Tiket)</strong>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
                             <span>Subtotal Harga Kotor</span>
-                            <span>Rp {{printf "%.0f" .Order.TotalGross}}</span>
+                            <span>Rp {{printf "%.2f" .Order.TotalGross}}</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between text-success">
                             <span>Potongan Kode Promo</span>
-                            <span>- Rp {{printf "%.0f" .Order.DiscountAmount}}</span>
+                            <span>- Rp {{printf "%.2f" .Order.DiscountAmount}}</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between bg-light fw-bold fs-5">
                             <span>Total Bayar Bersih</span>
-                            <span class="text-primary">Rp {{printf "%.0f" .Order.TotalNet}}</span>
+                            <span class="text-primary">Rp {{printf "%.2f" .Order.TotalNet}}</span>
                         </li>
                     </ul>
 
                     <h6 class="fw-bold">Daftar Pemegang Tiket ({{.Order.Quantity}} Orang)</h6>
                     <div class="table-responsive mb-4">
-                        <table class="table table-bordered table-sm">
+                        <table class="table table-bordered table-sm align-middle">
                             <thead class="table-light">
                                 <tr>
                                     <th>Kode Tiket</th>
@@ -71,7 +77,15 @@
                                     <td><code>{{.TicketCode}}</code></td>
                                     <td>{{.HolderName}}</td>
                                     <td>{{.HolderEmail}}</td>
-                                    <td><span class="badge bg-secondary">{{.Status}}</span></td>
+                                    <td>
+                                        {{if eq .Status "ACTIVE"}}
+                                        <span class="badge bg-success">{{.Status}}</span>
+                                        {{else if eq .Status "CANCELLED"}}
+                                        <span class="badge bg-danger">{{.Status}}</span>
+                                        {{else}}
+                                        <span class="badge bg-secondary">{{.Status}}</span>
+                                        {{end}}
+                                    </td>
                                 </tr>
                                 {{end}}
                             </tbody>
@@ -79,13 +93,26 @@
                     </div>
 
                     {{if eq .Order.Status "PENDING"}}
-                    <form action="/orders/{{.Order.ID}}/pay-simulate" method="POST">
-                        <div class="d-grid gap-2">
-                            <button type="submit" id="payBtn" class="btn btn-success btn-lg fw-bold">
-                                Simulasikan Pembayaran Berhasil
-                            </button>
+                    <div class="row g-2">
+                        <div class="col-md-7">
+                            <form action="/orders/{{.Order.ID}}/pay-simulate" method="POST" class="d-grid">
+                                <button type="submit" id="payBtn" class="btn btn-success btn-lg fw-bold">
+                                    Bayar
+                                </button>
+                            </form>
                         </div>
-                    </form>
+                        <div class="col-md-5">
+                            <form action="/orders/{{.Order.ID}}/cancel" method="POST" class="d-grid"
+                                  onsubmit="return confirm('Batalkan pesanan ini sekarang? Kuota tiket dan pemakaian promo akan dikembalikan.');">
+                                <button type="submit" id="cancelBtn" class="btn btn-outline-danger btn-lg fw-bold">
+                                    Batalkan Pesanan
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    <p class="text-muted small mt-3 mb-0">
+                        Kamu dapat membatalkan pesanan secara manual sebelum batas waktu 15 menit berakhir. Setelah dibatalkan, pesanan tidak dapat dibayar kembali.
+                    </p>
                     {{end}}
                 </div>
             </div>
@@ -95,26 +122,32 @@
 
 {{if eq .Order.Status "PENDING"}}
 <script>
-let remainingSeconds = {{.RemainingSeconds}};
+let remainingSeconds = Number({{.RemainingSeconds}});
 const timerDisplay = document.getElementById('countdownTimer');
 const payBtn = document.getElementById('payBtn');
+const cancelBtn = document.getElementById('cancelBtn');
+let timerInterval = null;
 
 function updateTimer() {
     if (remainingSeconds <= 0) {
-        timerDisplay.textContent = "00:00";
+        timerDisplay.textContent = '00:00';
         if (payBtn) payBtn.disabled = true;
-        window.location.reload(); // Reload otomatis agar Lazy Expiration membatalkan pesanan
+        if (cancelBtn) cancelBtn.disabled = true;
+        if (timerInterval !== null) clearInterval(timerInterval);
+        // Memuat ulang halaman agar Lazy Expiration memperbarui status menjadi EXPIRED.
+        window.location.reload();
         return;
     }
-    const mins = Math.floor(remainingSeconds / 60);
-    const secs = remainingSeconds % 60;
-    timerDisplay.textContent = 
-        String(mins).padStart(2, '0') + ":" + String(secs).padStart(2, '0');
+
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    timerDisplay.textContent =
+        String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
     remainingSeconds--;
 }
 
 updateTimer();
-setInterval(updateTimer, 1000);
+timerInterval = setInterval(updateTimer, 1000);
 </script>
 {{end}}
 {{end}}
