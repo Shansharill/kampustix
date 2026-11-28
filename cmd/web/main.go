@@ -69,13 +69,14 @@ func main() {
 	// Logout untuk user yang sedang login
 	mux.HandleFunc("POST /logout", authHandler.ProsesLogout)
 
-	// --- C. Rute Terproteksi Pembeli (Placeholder Anggota 3 & 5) ---
-	mux.Handle("GET /my-tickets", authMw.RequireRole("BUYER")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		view.Tampil(w, "tiket/tiket_saya.html", map[string]any{
-			"Title": "Tiket Saya - KampusTix",
-			"User":  middleware.CurrentUser(r),
-		})
-	})))
+	// --- C. Rute Terproteksi Pembeli (Placeholder Anggota 3) ---
+
+	// --- C2. Tiket Saya, Transfer, Refund & Batal Event (Anggota 5) ---
+	ticketHandler := &handler.TicketHandler{TicketSvc: &service.TicketService{RefundRepo: &repository.RefundRepo{DB: db}}, View: view}
+	mux.Handle("GET /my-tickets", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.TiketSaya)))
+	mux.Handle("POST /tickets/{id}/transfer", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.TransferTiket)))
+	mux.Handle("POST /tickets/{id}/refund", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.RefundTiket)))
+	mux.Handle("POST /admin/events/{id}/cancel", authMw.RequireRole("ADMIN")(http.HandlerFunc(ticketHandler.BatalkanEvent)))
 
 	// --- D. Rute Terproteksi Admin (Placeholder Anggota 2 & 4) ---
 	mux.Handle("GET /admin/events", authMw.RequireRole("ADMIN")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
