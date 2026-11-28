@@ -8,6 +8,10 @@ import (
 // ErrPromoNotFound dikembalikan repository jika kode promo tidak ada.
 var ErrPromoNotFound = errors.New("kode promo tidak ditemukan")
 
+// ErrKodePromoDuplikat dikembalikan repository jika kode promo sudah dipakai
+// (pelanggaran UNIQUE pada promo_codes.code, mis. dua admin menyimpan bersamaan).
+var ErrKodePromoDuplikat = errors.New("kode promo sudah dipakai")
+
 // PromoCode merepresentasikan satu baris tabel `promo_codes`
 // (ditambah nama event & kategori untuk keperluan tampilan).
 type PromoCode struct {
@@ -21,15 +25,13 @@ type PromoCode struct {
 	MaxUses         int
 	UsedCount       int
 	ValidUntil      time.Time
+	Expired         bool // dihitung di SQL (valid_until < NOW()) agar tidak bergantung zona waktu aplikasi
 	IsActive        bool
 	CreatedAt       time.Time
 }
 
 // SisaKuota menghitung sisa pemakaian promo.
 func (p PromoCode) SisaKuota() int { return p.MaxUses - p.UsedCount }
-
-// Kedaluwarsa true jika batas tanggal promo sudah lewat.
-func (p PromoCode) Kedaluwarsa() bool { return time.Now().After(p.ValidUntil) }
 
 // PromoInput menampung isian form tambah promo.
 type PromoInput struct {
@@ -52,6 +54,12 @@ type PilihanKategori struct {
 	ID      int64
 	EventID int64
 	Name    string
+}
+
+// InfoEvent = data event yang dibutuhkan untuk memvalidasi pembuatan promo.
+type InfoEvent struct {
+	Status             string // UPCOMING / ACTIVE / COMPLETED / CANCELLED
+	PromoMelewatiEvent bool   // true jika batas berlaku promo > tanggal event
 }
 
 // HasilPromo adalah hasil validasi + perhitungan diskon yang dipakai modul Checkout.

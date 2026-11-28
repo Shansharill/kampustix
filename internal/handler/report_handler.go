@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,13 @@ import (
 	"kampustix/internal/model"
 	"kampustix/internal/service"
 )
+
+// pesanSukses = daftar pesan yang boleh tampil lewat ?msg=KODE. Teks bebas dari URL
+// tidak pernah dirender, sehingga banner tidak bisa dipalsukan orang lain.
+var pesanSukses = map[string]string{
+	"created": "Kode promo berhasil ditambahkan",
+	"toggled": "Status promo diperbarui",
+}
 
 // ReportHandler: halaman admin untuk kode promo & laporan keuangan (Anggota 4).
 type ReportHandler struct {
@@ -42,7 +50,7 @@ func (h *ReportHandler) SimpanPromo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Terjadi kesalahan pada server", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/promos?success=Kode+promo+berhasil+ditambahkan", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/promos?msg=created", http.StatusSeeOther)
 }
 
 // TogglePromo  POST /admin/promos/{id}/toggle
@@ -61,7 +69,7 @@ func (h *ReportHandler) TogglePromo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Terjadi kesalahan pada server", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/promos?success=Status+promo+diperbarui", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/promos?msg=toggled", http.StatusSeeOther)
 }
 
 // LaporanRevenue  GET /admin/reports/revenue
@@ -96,12 +104,11 @@ func (h *ReportHandler) tampilPromo(w http.ResponseWriter, r *http.Request, in m
 		"Events":     d.Events,
 		"Categories": d.Categories,
 		"Input":      in,
-		"Success":    r.URL.Query().Get("success"),
 	}
 	if errMsg != "" {
 		data["Error"] = errMsg
-	} else if e := r.URL.Query().Get("error"); e != "" {
-		data["Error"] = e
+	} else if m, ok := pesanSukses[r.URL.Query().Get("msg")]; ok {
+		data["Success"] = m
 	}
 	h.View.Tampil(w, "admin/promo.html", data)
 }
@@ -110,14 +117,22 @@ func promoDariForm(r *http.Request) model.PromoInput {
 	eventID, _ := strconv.ParseInt(r.PostFormValue("event_id"), 10, 64)
 	catID, _ := strconv.ParseInt(r.PostFormValue("category_id"), 10, 64)
 	persen, _ := strconv.ParseFloat(strings.Replace(strings.TrimSpace(r.PostFormValue("discount_percent")), ",", ".", 1), 64)
-	maxUses, _ := strconv.Atoi(strings.TrimSpace(r.PostFormValue("max_uses")))
+	maxUses, err := strconv.Atoi(strings.TrimSpace(r.PostFormValue("max_uses")))
+	if errors.Is(err, strconv.ErrRange) {
+		maxUses = math.MaxInt // kebesaran: ditolak service dengan pesan yang jelas
+	} else if err != nil {
+		maxUses = 0
+	}
 
 	raw := strings.TrimSpace(r.PostFormValue("valid_until"))
 	var until time.Time
 	if raw != "" {
-		// <input type="datetime-local"> mengirim "2006-01-02T15:04"
-		if t, err := time.ParseInLocation("2006-01-02T15:04", raw, time.Local); err == nil {
-			until = t
+		// <input type="datetime-local"> mengirim "2006-01-02T15:04" (kadang dengan detik).
+		for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05"} {
+			if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+				until = t
+				break
+			}
 		}
 	}
 	return model.PromoInput{

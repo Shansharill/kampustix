@@ -38,12 +38,12 @@
                 <label for="discount_percent" class="form-label small fw-semibold text-secondary">Diskon (%)</label>
                 <input type="number" class="form-control" id="discount_percent" name="discount_percent"
                        value="{{if .Input.DiscountPercent}}{{printf "%g" .Input.DiscountPercent}}{{end}}"
-                       min="1" max="100" step="0.01" placeholder="10" required>
+                       min="0.01" max="100" step="0.01" placeholder="10" required>
             </div>
             <div class="col-md-3">
                 <label for="max_uses" class="form-label small fw-semibold text-secondary">Kuota Pemakaian</label>
                 <input type="number" class="form-control" id="max_uses" name="max_uses"
-                       value="{{if .Input.MaxUses}}{{.Input.MaxUses}}{{end}}" min="1" placeholder="50" required>
+                       value="{{if .Input.MaxUses}}{{.Input.MaxUses}}{{end}}" min="1" max="2147483647" placeholder="50" required>
             </div>
             <div class="col-md-4">
                 <label for="valid_until" class="form-label small fw-semibold text-secondary">Berlaku Sampai</label>
@@ -89,7 +89,7 @@
                     </td>
                     <td>
                         {{format_tanggal .ValidUntil}}
-                        {{if .Kedaluwarsa}}<span class="badge bg-secondary ms-1">Kedaluwarsa</span>{{end}}
+                        {{if .Expired}}<span class="badge bg-secondary ms-1">Kedaluwarsa</span>{{end}}
                     </td>
                     <td>
                         {{if .IsActive}}<span class="badge bg-success">Aktif</span>
@@ -127,7 +127,7 @@
             o.hidden = !tampil;
             o.disabled = !tampil;
         }
-        if (cat.options[cat.selectedIndex].disabled) { cat.value = '0'; }
+        if (cat.selectedIndex >= 0 && cat.options[cat.selectedIndex].disabled) { cat.value = '0'; }
     }
     ev.addEventListener('change', saring);
     saring();

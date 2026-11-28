@@ -57,13 +57,42 @@ func (s *PromoReportService) BuatPromo(ctx context.Context, in model.PromoInput)
 	if in.EventID <= 0 {
 		return promoErr("Pilih event terlebih dahulu")
 	}
-	ada, err := s.Repo.EventAda(ctx, in.EventID)
+	// NaN / Inf lolos perbandingan biasa, jadi dicek eksplisit.
+	if math.IsNaN(in.DiscountPercent) || math.IsInf(in.DiscountPercent, 0) ||
+		in.DiscountPercent <= 0 || in.DiscountPercent > 100 {
+		return promoErr("Persentase diskon harus lebih dari 0 dan maksimal 100")
+	}
+	in.DiscountPercent = math.Round(in.DiscountPercent*100) / 100 // kolom DECIMAL(5,2)
+	if in.DiscountPercent <= 0 {
+		return promoErr("Persentase diskon terlalu kecil, minimal 0,01%")
+	}
+	if in.MaxUses < 1 {
+		return promoErr("Kuota pemakaian minimal 1")
+	}
+	if in.MaxUses > math.MaxInt32 {
+		return promoErr("Kuota pemakaian terlalu besar (maksimal 2.147.483.647)")
+	}
+	if in.ValidUntil.IsZero() {
+		return promoErr("Batas tanggal berlaku wajib diisi")
+	}
+	if !in.ValidUntil.After(time.Now()) {
+		return promoErr("Batas tanggal berlaku harus di masa depan")
+	}
+
+	ev, err := s.Repo.InfoEvent(ctx, in.EventID, in.ValidUntil)
 	if err != nil {
 		return err
 	}
-	if !ada {
+	if ev == nil {
 		return promoErr("Event yang dipilih tidak ditemukan")
 	}
+	if ev.Status == "CANCELLED" || ev.Status == "COMPLETED" {
+		return promoErr("Event ini sudah dibatalkan atau selesai, tidak bisa dibuatkan promo")
+	}
+	if ev.PromoMelewatiEvent {
+		return promoErr("Batas berlaku promo tidak boleh melewati tanggal event")
+	}
+
 	if in.CategoryID > 0 {
 		cocok, err := s.Repo.KategoriMilikEvent(ctx, in.CategoryID, in.EventID)
 		if err != nil {
@@ -73,18 +102,7 @@ func (s *PromoReportService) BuatPromo(ctx context.Context, in model.PromoInput)
 			return promoErr("Kategori yang dipilih bukan bagian dari event tersebut")
 		}
 	}
-	if in.DiscountPercent <= 0 || in.DiscountPercent > 100 {
-		return promoErr("Persentase diskon harus lebih dari 0 dan maksimal 100")
-	}
-	if in.MaxUses < 1 {
-		return promoErr("Kuota pemakaian minimal 1")
-	}
-	if in.ValidUntil.IsZero() {
-		return promoErr("Batas tanggal berlaku wajib diisi")
-	}
-	if !in.ValidUntil.After(time.Now()) {
-		return promoErr("Batas tanggal berlaku harus di masa depan")
-	}
+
 	dup, err := s.Repo.KodeSudahAda(ctx, in.Code)
 	if err != nil {
 		return err
@@ -92,8 +110,15 @@ func (s *PromoReportService) BuatPromo(ctx context.Context, in model.PromoInput)
 	if dup {
 		return promoErr("Kode promo \"" + in.Code + "\" sudah dipakai, gunakan kode lain")
 	}
-	_, err = s.Repo.TambahPromo(ctx, in)
-	return err
+	if _, err := s.Repo.TambahPromo(ctx, in); err != nil {
+		// Dua permintaan dengan kode sama bisa lolos cek di atas bersamaan;
+		// UNIQUE di database yang jadi penentu akhir.
+		if errors.Is(err, model.ErrKodePromoDuplikat) {
+			return promoErr("Kode promo \"" + in.Code + "\" sudah dipakai, gunakan kode lain")
+		}
+		return err
+	}
+	return nil
 }
 
 // ToggleAktif mengaktifkan/menonaktifkan promo.
@@ -168,14 +193,26 @@ type DataLaporan struct {
 	Rincian   []model.BarisPenjualan
 }
 
-func (s *PromoReportService) Laporan(ctx context.Context) (DataLaporan, error) {
-	var d DataLaporan
-	var err error
-	if d.Ringkasan, err = s.Repo.Ringkasan(ctx); err != nil {
-		return d, err
+// HitungRingkasan menjumlahkan baris per tier menjadi 5 metrik utama (PRD 3.8).
+// Karena KPI diturunkan dari baris yang sama dengan tabel, keduanya tidak pernah selisih.
+func HitungRingkasan(rincian []model.BarisPenjualan) model.RevenueReport {
+	var r model.RevenueReport
+	for _, b := range rincian {
+		r.Gross += b.Gross
+		r.TotalDiskon += b.Diskon
+		r.TotalRefund += b.Refund
 	}
-	d.Rincian, err = s.Repo.PenjualanPerTier(ctx)
-	return d, err
+	r.NetSebelumRefund = r.Gross - r.TotalDiskon
+	r.NetAkhir = r.NetSebelumRefund - r.TotalRefund
+	return r
+}
+
+func (s *PromoReportService) Laporan(ctx context.Context) (DataLaporan, error) {
+	rincian, err := s.Repo.PenjualanPerTier(ctx)
+	if err != nil {
+		return DataLaporan{}, err
+	}
+	return DataLaporan{Ringkasan: HitungRingkasan(rincian), Rincian: rincian}, nil
 }
 
 // IsPromoError membantu handler membedakan kesalahan input vs kesalahan server.
