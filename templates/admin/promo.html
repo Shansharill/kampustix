@@ -1,1 +1,136 @@
-<!-- TODO: Placeholder promo.html -->
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h3 class="fw-bold mb-0"><i class="bi bi-tags-fill text-warning me-2"></i>Kelola Kode Promo</h3>
+        <p class="text-secondary small mb-0">Buat kode diskon persentase per event, atau khusus satu kategori tiket.</p>
+    </div>
+</div>
+
+<!-- FORM TAMBAH PROMO -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-1"></i>Tambah Kode Promo Baru</div>
+    <div class="card-body">
+        <form action="/admin/promos" method="POST" class="row g-3">
+            <div class="col-md-3">
+                <label for="code" class="form-label small fw-semibold text-secondary">Kode Promo</label>
+                <input type="text" class="form-control text-uppercase" id="code" name="code"
+                       value="{{.Input.Code}}" placeholder="MISAL: HEMAT10" maxlength="30" required>
+            </div>
+            <div class="col-md-5">
+                <label for="event_id" class="form-label small fw-semibold text-secondary">Event</label>
+                <select class="form-select" id="event_id" name="event_id" required>
+                    <option value="">-- Pilih event --</option>
+                    {{range .Events}}
+                    <option value="{{.ID}}" {{if eq $.Input.EventID .ID}}selected{{end}}>{{.Title}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="category_id" class="form-label small fw-semibold text-secondary">Kategori Tiket</label>
+                <select class="form-select" id="category_id" name="category_id">
+                    <option value="0" data-event="">Semua kategori di event ini</option>
+                    {{range .Categories}}
+                    <option value="{{.ID}}" data-event="{{.EventID}}" {{if eq $.Input.CategoryID .ID}}selected{{end}}>{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="discount_percent" class="form-label small fw-semibold text-secondary">Diskon (%)</label>
+                <input type="number" class="form-control" id="discount_percent" name="discount_percent"
+                       value="{{if .Input.DiscountPercent}}{{printf "%g" .Input.DiscountPercent}}{{end}}"
+                       min="1" max="100" step="0.01" placeholder="10" required>
+            </div>
+            <div class="col-md-3">
+                <label for="max_uses" class="form-label small fw-semibold text-secondary">Kuota Pemakaian</label>
+                <input type="number" class="form-control" id="max_uses" name="max_uses"
+                       value="{{if .Input.MaxUses}}{{.Input.MaxUses}}{{end}}" min="1" placeholder="50" required>
+            </div>
+            <div class="col-md-4">
+                <label for="valid_until" class="form-label small fw-semibold text-secondary">Berlaku Sampai</label>
+                <input type="datetime-local" class="form-control" id="valid_until" name="valid_until"
+                       value="{{.Input.ValidUntilRaw}}" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-dark w-100 fw-semibold">
+                    <i class="bi bi-save me-1"></i>Simpan
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TABEL DAFTAR PROMO -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white fw-semibold"><i class="bi bi-list-ul me-1"></i>Daftar Kode Promo</div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Kode</th>
+                    <th>Event</th>
+                    <th>Kategori</th>
+                    <th class="text-end">Diskon</th>
+                    <th class="text-center">Pemakaian</th>
+                    <th>Berlaku Sampai</th>
+                    <th>Status</th>
+                    <th class="text-end">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Promos}}
+                <tr>
+                    <td><span class="fw-bold font-monospace">{{.Code}}</span></td>
+                    <td>{{.EventTitle}}</td>
+                    <td>{{if .CategoryName}}{{.CategoryName}}{{else}}<span class="text-secondary">Semua kategori</span>{{end}}</td>
+                    <td class="text-end">{{printf "%g" .DiscountPercent}}%</td>
+                    <td class="text-center">
+                        {{.UsedCount}} / {{.MaxUses}}
+                        {{if le .SisaKuota 0}}<span class="badge bg-danger ms-1">Habis</span>{{end}}
+                    </td>
+                    <td>
+                        {{format_tanggal .ValidUntil}}
+                        {{if .Kedaluwarsa}}<span class="badge bg-secondary ms-1">Kedaluwarsa</span>{{end}}
+                    </td>
+                    <td>
+                        {{if .IsActive}}<span class="badge bg-success">Aktif</span>
+                        {{else}}<span class="badge bg-secondary">Nonaktif</span>{{end}}
+                    </td>
+                    <td class="text-end">
+                        <form action="/admin/promos/{{.ID}}/toggle" method="POST" class="d-inline">
+                            {{if .IsActive}}
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">Nonaktifkan</button>
+                            {{else}}
+                            <button type="submit" class="btn btn-outline-success btn-sm">Aktifkan</button>
+                            {{end}}
+                        </form>
+                    </td>
+                </tr>
+            {{else}}
+                <tr><td colspan="8" class="text-center text-secondary py-4">Belum ada kode promo.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// Hanya tampilkan kategori milik event yang dipilih.
+(function () {
+    var ev = document.getElementById('event_id');
+    var cat = document.getElementById('category_id');
+    function saring() {
+        var pilihan = ev.value;
+        for (var i = 0; i < cat.options.length; i++) {
+            var o = cat.options[i];
+            var milik = o.getAttribute('data-event');
+            var tampil = (milik === '' || milik === pilihan);
+            o.hidden = !tampil;
+            o.disabled = !tampil;
+        }
+        if (cat.options[cat.selectedIndex].disabled) { cat.value = '0'; }
+    }
+    ev.addEventListener('change', saring);
+    saring();
+})();
+</script>
+{{end}}
