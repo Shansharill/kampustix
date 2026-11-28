@@ -22,24 +22,32 @@ type TicketHandler struct {
 // errorUntukUser: pesan error bisnis yang aman ditampilkan ke pengguna (selain ini = error server)
 var errorUntukUser = []error{
 	service.ErrTiketTidakDitemukan, service.ErrTiketTidakAktif, service.ErrSudahPernahTransfer,
-	service.ErrEventSudahBatal, service.ErrLewatH7, service.ErrNamaPemegang, service.ErrEmailPemegang,
-	service.ErrAlasanTerlaluPanjang, service.ErrEventTidakDitemukan, service.ErrEventTidakBisaBatal,
+	service.ErrEventSudahBatal, service.ErrEventSudahLewat, service.ErrLewatH7, service.ErrPemegangSama,
+	service.ErrNamaPemegang, service.ErrEmailPemegang, service.ErrAlasanTerlaluPanjang,
+	service.ErrEventTidakDitemukan, service.ErrEventTidakBisaBatal,
 }
 
-// kembali melakukan redirect (pola Post/Redirect/Get) dengan pesan sukses atau error
-func kembali(w http.ResponseWriter, r *http.Request, tujuan string, err error, sukses string) {
+// kembali melakukan redirect (pola Post/Redirect/Get): ke tujuanSukses dengan pesan sukses,
+// atau ke tujuanGagal dengan pesan error. Kedua tujuan diakhiri "?" atau "&".
+func kembali(w http.ResponseWriter, r *http.Request, tujuanSukses, tujuanGagal string, err error, sukses string) {
 	if err == nil {
-		http.Redirect(w, r, tujuan+"pesan="+url.QueryEscape(sukses), http.StatusSeeOther)
+		http.Redirect(w, r, tujuanSukses+"pesan="+url.QueryEscape(sukses), http.StatusSeeOther)
 		return
 	}
 	for _, e := range errorUntukUser {
 		if errors.Is(err, e) {
-			http.Redirect(w, r, tujuan+"error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			http.Redirect(w, r, tujuanGagal+"error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 			return
 		}
 	}
 	log.Printf("error %s %s: %v", r.Method, r.URL.Path, err)
 	http.Error(w, "Terjadi kesalahan pada server, silakan coba lagi", http.StatusInternalServerError)
+}
+
+// idTiketDariPath membaca {id} dari URL; hanya bilangan bulat positif yang diterima
+func idTiketDariPath(r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	return id, err == nil && id > 0
 }
 
 // TiketSaya menampilkan tiket milik pembeli yang sedang login
@@ -69,8 +77,8 @@ func (h *TicketHandler) TiketSaya(w http.ResponseWriter, r *http.Request) {
 // TransferTiket memindahkan pemegang tiket (maksimal 1 kali)
 // Endpoint: POST /tickets/{id}/transfer
 func (h *TicketHandler) TransferTiket(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id, ok := idTiketDariPath(r)
+	if !ok {
 		http.Error(w, "ID tiket tidak valid", http.StatusBadRequest)
 		return
 	}
@@ -82,15 +90,15 @@ func (h *TicketHandler) TransferTiket(w http.ResponseWriter, r *http.Request) {
 		HolderName:  r.PostFormValue("holder_name"),
 		HolderEmail: r.PostFormValue("holder_email"),
 	}
-	err = h.TicketSvc.Transfer(r.Context(), middleware.CurrentUser(r).ID, id, in)
-	kembali(w, r, "/my-tickets?", err, "Tiket berhasil dipindahkan. Transfer untuk tiket ini sekarang terkunci.")
+	err := h.TicketSvc.Transfer(r.Context(), middleware.CurrentUser(r).ID, id, in)
+	kembali(w, r, "/my-tickets?", "/my-tickets?", err, "Tiket berhasil dipindahkan. Transfer untuk tiket ini sekarang terkunci.")
 }
 
 // RefundTiket mengajukan refund mandiri 75% (maksimal H-7)
 // Endpoint: POST /tickets/{id}/refund
 func (h *TicketHandler) RefundTiket(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id, ok := idTiketDariPath(r)
+	if !ok {
 		http.Error(w, "ID tiket tidak valid", http.StatusBadRequest)
 		return
 	}
@@ -99,19 +107,20 @@ func (h *TicketHandler) RefundTiket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	amount, err := h.TicketSvc.Refund(r.Context(), middleware.CurrentUser(r).ID, id, r.PostFormValue("reason"))
-	kembali(w, r, "/my-tickets?tab=dibatalkan&", err,
+	// Berhasil -> tiket pindah ke tab Dibatalkan; gagal -> tetap di tab Aktif agar tiketnya terlihat
+	kembali(w, r, "/my-tickets?tab=dibatalkan&", "/my-tickets?tab=aktif&", err,
 		fmt.Sprintf("Refund berhasil. Dana %s (75%%) akan dikembalikan.", rupiah(amount)))
 }
 
 // BatalkanEvent membatalkan event dan me-refund 100% semua tiket aktif (khusus ADMIN)
 // Endpoint: POST /admin/events/{id}/cancel
 func (h *TicketHandler) BatalkanEvent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id, ok := idTiketDariPath(r)
+	if !ok {
 		http.Error(w, "ID event tidak valid", http.StatusBadRequest)
 		return
 	}
 	jumlah, err := h.TicketSvc.BatalkanEvent(r.Context(), middleware.CurrentUser(r).ID, id)
-	kembali(w, r, "/admin/events?", err,
+	kembali(w, r, "/admin/events?", "/admin/events?", err,
 		fmt.Sprintf("Event dibatalkan. %d tiket aktif di-refund 100%%.", jumlah))
 }

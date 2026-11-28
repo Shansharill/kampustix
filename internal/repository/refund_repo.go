@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"kampustix/internal/model"
 )
@@ -19,7 +20,7 @@ func (r *RefundRepo) TiketMilikUser(ctx context.Context, userID int64) ([]model.
 	query := `SELECT t.id, t.ticket_code, t.holder_name, t.holder_email, t.status, t.transfer_count,
 			t.unit_net_price, o.order_code, e.title, e.venue, e.event_date, e.status,
 			c.category_name, tr.tier_name, NOW() <= DATE_SUB(e.event_date, INTERVAL 7 DAY),
-			rf.refund_amount, rf.refund_percent
+			NOW() < e.event_date, rf.refund_amount, rf.refund_percent
 		FROM tickets t
 		JOIN orders o            ON o.id = t.order_id
 		JOIN events e            ON e.id = t.event_id
@@ -39,7 +40,7 @@ func (r *RefundRepo) TiketMilikUser(ctx context.Context, userID int64) ([]model.
 		var t model.TiketSaya
 		if err := rows.Scan(&t.ID, &t.TicketCode, &t.HolderName, &t.HolderEmail, &t.Status, &t.TransferCount,
 			&t.UnitNetPrice, &t.OrderCode, &t.EventTitle, &t.Venue, &t.EventDate, &t.EventStatus,
-			&t.Kategori, &t.Tier, &t.MasihH7, &t.RefundAmount, &t.RefundPercent); err != nil {
+			&t.Kategori, &t.Tier, &t.MasihH7, &t.EventBelumMulai, &t.RefundAmount, &t.RefundPercent); err != nil {
 			return nil, err
 		}
 		hasil = append(hasil, t)
@@ -47,19 +48,22 @@ func (r *RefundRepo) TiketMilikUser(ctx context.Context, userID int64) ([]model.
 	return hasil, rows.Err()
 }
 
-// KunciTiketMilik mengambil & mengunci (FOR UPDATE) tiket HANYA jika milik userID (Owner Check / anti-IDOR).
+// KunciTiketMilik mengambil & mengunci tiket HANYA jika milik userID (Owner Check / anti-IDOR).
+// "FOR UPDATE OF t" (MySQL 8) hanya mengunci baris tickets, bukan orders/events, supaya
+// urutan kunci tidak bertabrakan dengan BatalkanEvent (events -> orders -> tickets) dan
+// pembeli lain di event yang sama tidak saling antre.
 // Mengembalikan nil jika tiket tidak ada atau bukan milik user.
 func (r *RefundRepo) KunciTiketMilik(ctx context.Context, tx *sql.Tx, ticketID, userID int64) (*model.TiketUntukAksi, error) {
-	query := `SELECT t.id, t.order_id, t.tier_id, t.status, t.transfer_count, t.unit_net_price, e.status,
-			NOW() <= DATE_SUB(e.event_date, INTERVAL 7 DAY)
+	query := `SELECT t.id, t.order_id, t.tier_id, t.holder_name, t.holder_email, t.status, t.transfer_count,
+			t.unit_net_price, e.status, NOW() <= DATE_SUB(e.event_date, INTERVAL 7 DAY), NOW() < e.event_date
 		FROM tickets t
 		JOIN orders o ON o.id = t.order_id
 		JOIN events e ON e.id = t.event_id
 		WHERE t.id = ? AND o.user_id = ?
-		FOR UPDATE`
+		FOR UPDATE OF t`
 	var t model.TiketUntukAksi
-	err := tx.QueryRowContext(ctx, query, ticketID, userID).Scan(&t.ID, &t.OrderID, &t.TierID, &t.Status,
-		&t.TransferCount, &t.UnitNetPrice, &t.EventStatus, &t.MasihH7)
+	err := tx.QueryRowContext(ctx, query, ticketID, userID).Scan(&t.ID, &t.OrderID, &t.TierID, &t.HolderName,
+		&t.HolderEmail, &t.Status, &t.TransferCount, &t.UnitNetPrice, &t.EventStatus, &t.MasihH7, &t.EventBelumMulai)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -84,9 +88,16 @@ func (r *RefundRepo) GantiPemegang(ctx context.Context, tx *sql.Tx, ticketID int
 }
 
 // CatatRefundMandiri: tiket → REFUNDED, simpan baris refunds, lepas 1 kuota tier agar bisa dijual lagi
+// Syarat status ACTIVE ikut ditulis di WHERE sebagai pengaman kedua.
 func (r *RefundRepo) CatatRefundMandiri(ctx context.Context, tx *sql.Tx, rf model.Refund, tierID int64) error {
-	if _, err := tx.ExecContext(ctx, `UPDATE tickets SET status = 'REFUNDED' WHERE id = ?`, rf.TicketID); err != nil {
+	res, err := tx.ExecContext(ctx, `UPDATE tickets SET status = 'REFUNDED' WHERE id = ? AND status = 'ACTIVE'`, rf.TicketID)
+	if err != nil {
 		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return model.ErrTiketTidakAktif
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO refunds
 		(ticket_id, order_id, requested_by, refund_percent, refund_amount, refund_type, reason)
@@ -94,7 +105,7 @@ func (r *RefundRepo) CatatRefundMandiri(ctx context.Context, tx *sql.Tx, rf mode
 		rf.TicketID, rf.OrderID, rf.RequestedBy, rf.RefundPercent, rf.RefundAmount, rf.RefundType, rf.Reason); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `UPDATE ticket_tiers SET used_quota = used_quota - 1 WHERE id = ? AND used_quota > 0`, tierID)
+	_, err = tx.ExecContext(ctx, `UPDATE ticket_tiers SET used_quota = used_quota - 1 WHERE id = ? AND used_quota > 0`, tierID)
 	return err
 }
 
@@ -108,11 +119,27 @@ func (r *RefundRepo) KunciStatusEvent(ctx context.Context, tx *sql.Tx, eventID i
 	return status, err
 }
 
-// BatalkanEvent: refund 100% semua tiket ACTIVE, ubah tiket → REFUNDED, event → CANCELLED.
-// Pesanan yang masih PENDING (belum bayar) ikut dibatalkan agar tidak bisa dibayar setelah event batal.
+// BatalkanEvent: pesanan PENDING -> CANCELLED, tiket RESERVED -> CANCELLED, lalu refund 100% semua
+// tiket ACTIVE (tiket -> REFUNDED) dan event -> CANCELLED. Dipanggil setelah baris event dikunci.
+// Urutan kunci: events -> orders -> tickets (sama dengan alur bayar Anggota 3: orders -> tickets).
+// Baris tiket ACTIVE dikunci eksplisit (FOR UPDATE) sebelum dicatat ke refunds, sehingga
+// tiket yang di-REFUNDED pasti sama dengan yang tercatat di tabel refunds.
 // Kuota tier & promo sengaja TIDAK dilepas karena event tidak dijual lagi (PRD 3.5 poin 2).
 // Mengembalikan jumlah tiket yang di-refund.
 func (r *RefundRepo) BatalkanEvent(ctx context.Context, tx *sql.Tx, eventID, adminID int64) (int64, error) {
+	if _, err := tx.ExecContext(ctx, `UPDATE orders SET status = 'CANCELLED' WHERE event_id = ? AND status = 'PENDING'`, eventID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tickets SET status = 'CANCELLED' WHERE event_id = ? AND status = 'RESERVED'`, eventID); err != nil {
+		return 0, err
+	}
+
+	var jumlah int64
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM tickets WHERE event_id = ? AND status = 'ACTIVE' FOR UPDATE`,
+		eventID).Scan(&jumlah); err != nil {
+		return 0, err
+	}
+
 	res, err := tx.ExecContext(ctx, `INSERT INTO refunds
 		(ticket_id, order_id, requested_by, refund_percent, refund_amount, refund_type, reason)
 		SELECT t.id, t.order_id, ?, 100, t.unit_net_price, 'EVENT_CANCELLED', 'Event dibatalkan penyelenggara'
@@ -120,19 +147,22 @@ func (r *RefundRepo) BatalkanEvent(ctx context.Context, tx *sql.Tx, eventID, adm
 	if err != nil {
 		return 0, err
 	}
-	jumlah, err := res.RowsAffected()
+	if n, err := res.RowsAffected(); err != nil {
+		return 0, err
+	} else if n != jumlah {
+		return 0, fmt.Errorf("jumlah refund (%d) tidak sama dengan tiket aktif (%d)", n, jumlah)
+	}
+
+	res, err = tx.ExecContext(ctx, `UPDATE tickets SET status = 'REFUNDED' WHERE event_id = ? AND status = 'ACTIVE'`, eventID)
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE tickets SET status = 'REFUNDED' WHERE event_id = ? AND status = 'ACTIVE'`, eventID); err != nil {
+	if n, err := res.RowsAffected(); err != nil {
 		return 0, err
+	} else if n != jumlah {
+		return 0, fmt.Errorf("jumlah tiket di-refund (%d) tidak sama dengan tiket aktif (%d)", n, jumlah)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE tickets SET status = 'CANCELLED' WHERE event_id = ? AND status = 'RESERVED'`, eventID); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE orders SET status = 'CANCELLED' WHERE event_id = ? AND status = 'PENDING'`, eventID); err != nil {
-		return 0, err
-	}
+
 	_, err = tx.ExecContext(ctx, `UPDATE events SET status = 'CANCELLED' WHERE id = ?`, eventID)
 	return jumlah, err
 }

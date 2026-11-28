@@ -69,9 +69,9 @@
                             <button type="submit" class="btn btn-sm btn-dark">Pindahkan Tiket</button>
                         </form>
                     </details>
-                    {{ else }}
-                    <span class="badge text-bg-light border align-self-center"><i class="bi bi-lock me-1"></i>Transfer terkunci (sudah 1×)</span>
-                    {{ end }}
+                    {{ else }}{{ with .AlasanTolakTransfer }}
+                    <span class="small text-muted align-self-center"><i class="bi bi-lock me-1"></i>Transfer tidak tersedia: {{ .Error }}</span>
+                    {{ end }}{{ end }}
 
                     {{ if .BolehRefund }}
                     <details class="w-100">
@@ -85,9 +85,9 @@
                             <button type="submit" class="btn btn-sm btn-danger">Ya, Refund Tiket Ini</button>
                         </form>
                     </details>
-                    {{ else }}
-                    <span class="badge text-bg-light border align-self-center"><i class="bi bi-clock-history me-1"></i>Refund ditutup (lewat H-7)</span>
-                    {{ end }}
+                    {{ else }}{{ with .AlasanTolakRefund }}
+                    <span class="small text-muted align-self-center"><i class="bi bi-clock-history me-1"></i>Refund tidak tersedia: {{ .Error }}</span>
+                    {{ end }}{{ end }}
                 </div>
                 {{ end }}
             </div>

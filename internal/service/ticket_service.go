@@ -12,11 +12,15 @@ import (
 )
 
 var (
+	// Aturan tiket (sumbernya di model agar sama dengan yang dipakai template)
+	ErrTiketTidakAktif     = model.ErrTiketTidakAktif
+	ErrSudahPernahTransfer = model.ErrSudahPernahTransfer
+	ErrEventSudahBatal     = model.ErrEventSudahBatal
+	ErrEventSudahLewat     = model.ErrEventSudahLewat
+	ErrLewatH7             = model.ErrLewatH7
+
 	ErrTiketTidakDitemukan  = errors.New("tiket tidak ditemukan")
-	ErrTiketTidakAktif      = errors.New("hanya tiket berstatus aktif yang bisa diproses")
-	ErrSudahPernahTransfer  = errors.New("tiket ini sudah pernah dipindahkan, transfer hanya boleh 1 kali")
-	ErrEventSudahBatal      = errors.New("event sudah dibatalkan, tiket sudah otomatis di-refund 100%")
-	ErrLewatH7              = errors.New("refund hanya bisa diajukan paling lambat 7 hari sebelum event")
+	ErrPemegangSama         = errors.New("nama dan email pemegang baru sama dengan pemegang sekarang, transfer dibatalkan agar jatah 1x tidak terpakai")
 	ErrNamaPemegang         = errors.New("nama pemegang baru wajib diisi (maksimal 100 karakter)")
 	ErrEmailPemegang        = errors.New("email pemegang baru tidak valid")
 	ErrAlasanTerlaluPanjang = errors.New("alasan refund maksimal 255 karakter")
@@ -60,8 +64,11 @@ func (s *TicketService) Transfer(ctx context.Context, userID, ticketID int64, in
 	if t == nil {
 		return ErrTiketTidakDitemukan
 	}
-	if err := CekBolehTransfer(t); err != nil {
+	if err := t.AlasanTolakTransfer(); err != nil {
 		return err
+	}
+	if strings.EqualFold(t.HolderName, in.HolderName) && strings.EqualFold(t.HolderEmail, in.HolderEmail) {
+		return ErrPemegangSama
 	}
 	berubah, err := s.RefundRepo.GantiPemegang(ctx, tx, t.ID, in)
 	if err != nil {
@@ -93,7 +100,7 @@ func (s *TicketService) Refund(ctx context.Context, userID, ticketID int64, alas
 	if t == nil {
 		return 0, ErrTiketTidakDitemukan
 	}
-	if err := CekBolehRefund(t); err != nil {
+	if err := t.AlasanTolakRefund(); err != nil {
 		return 0, err
 	}
 	amount := model.HitungRefund(t.UnitNetPrice, 75)
@@ -167,30 +174,6 @@ func ValidasiTransfer(in model.TransferInput) error {
 	addr, err := mail.ParseAddress(in.HolderEmail)
 	if err != nil || addr.Address != in.HolderEmail || len(in.HolderEmail) > 120 {
 		return ErrEmailPemegang
-	}
-	return nil
-}
-
-func CekBolehTransfer(t *model.TiketUntukAksi) error {
-	switch {
-	case t.EventStatus == "CANCELLED":
-		return ErrEventSudahBatal
-	case t.Status != model.TiketActive:
-		return ErrTiketTidakAktif
-	case t.TransferCount >= 1:
-		return ErrSudahPernahTransfer
-	}
-	return nil
-}
-
-func CekBolehRefund(t *model.TiketUntukAksi) error {
-	switch {
-	case t.EventStatus == "CANCELLED":
-		return ErrEventSudahBatal
-	case t.Status != model.TiketActive:
-		return ErrTiketTidakAktif
-	case !t.MasihH7:
-		return ErrLewatH7
 	}
 	return nil
 }

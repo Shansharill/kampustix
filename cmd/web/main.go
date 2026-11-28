@@ -39,6 +39,11 @@ func main() {
 	authMw := middleware.NewAuthMiddleware(userRepo)
 	authHandler := &handler.AuthHandler{AuthSvc: authSvc, View: view}
 
+	// 4a. PERAKITAN DEPENDENCY (Anggota 5: Tiket Saya, Transfer & Refund)
+	refundRepo := &repository.RefundRepo{DB: db}
+	ticketSvc := &service.TicketService{RefundRepo: refundRepo}
+	ticketHandler := &handler.TicketHandler{TicketSvc: ticketSvc, View: view}
+
 	// 4b. PERAKITAN DEPENDENCY (Anggota 6: Gatekeeper)
 	gatekeeperRepo := &repository.GatekeeperRepo{DB: db}
 	gatekeeperSvc := &service.GatekeeperService{Repo: gatekeeperRepo}
@@ -72,7 +77,6 @@ func main() {
 	// --- C. Rute Terproteksi Pembeli (Placeholder Anggota 3) ---
 
 	// --- C2. Tiket Saya, Transfer, Refund & Batal Event (Anggota 5) ---
-	ticketHandler := &handler.TicketHandler{TicketSvc: &service.TicketService{RefundRepo: &repository.RefundRepo{DB: db}}, View: view}
 	mux.Handle("GET /my-tickets", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.TiketSaya)))
 	mux.Handle("POST /tickets/{id}/transfer", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.TransferTiket)))
 	mux.Handle("POST /tickets/{id}/refund", authMw.RequireRole("BUYER")(http.HandlerFunc(ticketHandler.RefundTiket)))
