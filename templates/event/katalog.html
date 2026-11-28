@@ -1,1 +1,129 @@
-<!-- TODO: Placeholder katalog.html -->
+
+{{define "content"}}
+<div class="container">
+
+    <!-- HEADER KATALOG -->
+    <div class="p-4 p-md-5 mb-4 rounded-4 text-white shadow"
+         style="background: linear-gradient(120deg, #1f2a3a, #34495e);">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <span class="badge bg-warning text-dark mb-3">
+                    <i class="bi bi-music-note-beamed me-1"></i>
+                    KampusTix
+                </span>
+
+                <h1 class="fw-bold display-6">
+                    Temukan Event Favoritmu!
+                </h1>
+
+                <p class="mb-0 text-light">
+                    Jelajahi berbagai acara dan konser menarik di lingkungan kampus.
+                    Pilih event favoritmu dan jangan sampai kehabisan tiket.
+                </p>
+            </div>
+
+            <div class="col-md-4 text-md-end mt-4 mt-md-0">
+                <i class="bi bi-ticket-perforated"
+                   style="font-size: 100px; color: #c9a227;"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- JUDUL DAFTAR EVENT -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold mb-1">Daftar Event</h3>
+            <p class="text-secondary mb-0">
+                Temukan acara yang sesuai dengan minatmu.
+            </p>
+        </div>
+
+        <span class="badge rounded-pill text-bg-dark px-3 py-2">
+            {{len .Events}} Event
+        </span>
+    </div>
+
+    <!-- DAFTAR KARTU EVENT -->
+    <div class="row g-4">
+
+        {{if .Events}}
+            {{range .Events}}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden">
+
+                    <!-- GAMBAR PENGGANTI -->
+                    <div class="d-flex align-items-center justify-content-center"
+                         style="height: 180px; background: linear-gradient(135deg, #1f2a3a, #526477);">
+                        <i class="bi bi-music-note-list text-warning"
+                           style="font-size: 65px;"></i>
+                    </div>
+
+                    <div class="card-body p-4">
+
+                        <div class="d-flex justify-content-between mb-3">
+                            {{if eq .EventType "CONCERT"}}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="bi bi-music-note-beamed me-1"></i>
+                                    Konser
+                                </span>
+                            {{else}}
+                                <span class="badge bg-info text-dark">
+                                    <i class="bi bi-mortarboard me-1"></i>
+                                    Seminar
+                                </span>
+                            {{end}}
+
+                            {{if eq .Status "ACTIVE"}}
+                                <span class="badge bg-success">Aktif</span>
+                            {{else}}
+                                <span class="badge bg-primary">Akan Datang</span>
+                            {{end}}
+                        </div>
+
+                        <h5 class="fw-bold mb-3">{{.Title}}</h5>
+
+                        <p class="text-secondary small mb-2">
+                            <i class="bi bi-calendar-event me-2"></i>
+                            {{format_tanggal .EventDate}}
+                        </p>
+
+                        <p class="text-secondary small mb-2">
+                            <i class="bi bi-geo-alt me-2"></i>
+                            {{.Venue}}
+                        </p>
+
+                        <p class="text-secondary small mb-3">
+                            <i class="bi bi-people me-2"></i>
+                            Kapasitas: {{.TotalCapacity}} orang
+                        </p>
+
+                        <a href="/events/{{.ID}}"
+                           class="btn btn-dark w-100 rounded-pill">
+                            Lihat Detail
+                            <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+
+                    </div>
+                </div>
+            </div>
+            {{end}}
+
+        {{else}}
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4 p-5 text-center">
+                    <i class="bi bi-calendar-x text-secondary"
+                       style="font-size: 55px;"></i>
+
+                    <h5 class="fw-bold mt-3">Belum Ada Event</h5>
+
+                    <p class="text-secondary mb-0">
+                        Saat ini belum ada event yang tersedia.
+                        Silakan kunjungi kembali nanti.
+                    </p>
+                </div>
+            </div>
+        {{end}}
+
+    </div>
+</div>
+{{end}}
