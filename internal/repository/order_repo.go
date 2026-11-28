@@ -582,17 +582,17 @@ func (r *OrderRepository) ConfirmPayment(ctx context.Context, orderID int, userI
 		return ErrForbidden
 	}
 
+	// Pastikan order masih menunggu pembayaran.
+	if status != "PENDING" {
+		return NewBusinessError(fmt.Sprintf("Pesanan tidak dapat dibayar karena statusnya %s.", status))
+	}
+
 	// Tolak pembayaran apabila event sudah dibatalkan atau selesai.
 	if eventStatus == "CANCELLED" {
 		return NewBusinessError("Pembayaran ditolak karena event sudah dibatalkan.")
 	}
 	if eventStatus == "COMPLETED" {
 		return NewBusinessError("Pembayaran ditolak karena event sudah selesai.")
-	}
-
-	// Pastikan order masih menunggu pembayaran.
-	if status != "PENDING" {
-		return NewBusinessError(fmt.Sprintf("Pesanan tidak dapat dibayar karena statusnya %s.", status))
 	}
 
 	if isExpired == 1 {
@@ -637,7 +637,7 @@ func (r *OrderRepository) ConfirmPayment(ctx context.Context, orderID int, userI
 		return err
 	}
 	if affected != 1 {
-		return errors.New("status pesanan berubah; pembayaran tidak dapat diproses")
+		return NewBusinessError("status pesanan berubah; pembayaran tidak dapat diproses")
 	}
 
 	return tx.Commit()

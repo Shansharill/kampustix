@@ -44,6 +44,11 @@
                         Silakan lakukan pemesanan ulang.
                     </div>
 
+                     {{else if eq .Order.Status "PAID"}}
+                    <div class="alert alert-success" role="alert">
+                        <strong>Pembayaran berhasil (PAID).</strong> Seluruh tiket dalam pesanan ini sudah aktif.
+                    </div>
+
                     {{else if eq .Order.Status "CANCELLED"}}
                     <div class="alert alert-secondary">
                         <strong>Pesanan dibatalkan (CANCELLED).</strong>
@@ -228,3 +233,6 @@ updateTimer();
 timerInterval = setInterval(updateTimer, 1000);
 </script>
 {{end}}
+
+</script>
+{{end}}   
