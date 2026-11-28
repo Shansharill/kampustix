@@ -47,6 +47,11 @@ func main() {
 		View:          view,
 	}
 
+	// 4c. PERAKITAN DEPENDENCY (Anggota 4: Promo & Laporan Keuangan)
+	promoRepo := &repository.PromoReportRepo{DB: db}
+	promoSvc := &service.PromoReportService{Repo: promoRepo}
+	reportHandler := &handler.ReportHandler{Svc: promoSvc, View: view}
+
 	// 5. TAHAP PENDAFTARAN RUTE (ROUTING GO 1.22+)
 	mux := http.NewServeMux()
 
@@ -84,18 +89,11 @@ func main() {
 			"User":  middleware.CurrentUser(r),
 		})
 	})))
-	mux.Handle("GET /admin/promos", authMw.RequireRole("ADMIN")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		view.Tampil(w, "admin/promo.html", map[string]any{
-			"Title": "Kelola Promo - KampusTix Admin",
-			"User":  middleware.CurrentUser(r),
-		})
-	})))
-	mux.Handle("GET /admin/reports/revenue", authMw.RequireRole("ADMIN")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		view.Tampil(w, "admin/laporan.html", map[string]any{
-			"Title": "Laporan Keuangan - KampusTix Admin",
-			"User":  middleware.CurrentUser(r),
-		})
-	})))
+	// Anggota 4: Kode Promo & Laporan Keuangan (khusus ADMIN)
+	mux.Handle("GET /admin/promos", authMw.RequireRole("ADMIN")(http.HandlerFunc(reportHandler.DaftarPromo)))
+	mux.Handle("POST /admin/promos", authMw.RequireRole("ADMIN")(http.HandlerFunc(reportHandler.SimpanPromo)))
+	mux.Handle("POST /admin/promos/{id}/toggle", authMw.RequireRole("ADMIN")(http.HandlerFunc(reportHandler.TogglePromo)))
+	mux.Handle("GET /admin/reports/revenue", authMw.RequireRole("ADMIN")(http.HandlerFunc(reportHandler.LaporanRevenue)))
 
 	// --- E. Rute Terproteksi Gatekeeper / Pintu Masuk (Anggota 6) ---
 	mux.Handle("GET /gatekeeper/scan", authMw.RequireRole("GATEKEEPER", "ADMIN")(http.HandlerFunc(gatekeeperHandler.ScanPage)))
