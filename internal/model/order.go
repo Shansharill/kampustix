@@ -28,13 +28,12 @@ type TicketHolderInput struct {
 
 // CheckoutRequest menampung seluruh data yang dikirim dari form checkout
 type CheckoutRequest struct {
-	UserID     int
-	EventID    int
-	CategoryID int
-	TierID     int
-	PromoCode  string
-	Quantity   int
-	Holders    []TicketHolderInput
+	UserID    int
+	EventID   int
+	TierID    int
+	PromoCode string
+	Quantity  int
+	Holders   []TicketHolderInput
 }
 
 // OrderTicketView digunakan untuk menampilkan detail tiket di halaman pembayaran

@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math"
-	"sort"
 
 	"kampustix/internal/model"
 )
@@ -24,145 +24,153 @@ func NewOrderRepository(db *sql.DB) *OrderRepository {
 // RunLazyExpiration menjalankan pembersihan order PENDING yang sudah melewati
 // expires_at. Semua perubahan dilakukan dalam satu transaksi agar status order,
 // status tiket, kuota tier, dan pemakaian promo selalu konsisten.
+// RunLazyExpiration memproses order kedaluwarsa satu per satu.
 func (r *OrderRepository) RunLazyExpiration(ctx context.Context) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	type expiredOrder struct {
-		id       int
-		tierID   int
-		quantity int
-		promoID  sql.NullInt64
-	}
-
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id, tier_id, quantity, promo_code_id
-		FROM orders
-		WHERE status = 'PENDING' AND expires_at < NOW()
-		ORDER BY id
-		FOR UPDATE
-	`)
+	// Ambil daftar ID order yang sudah kedaluwarsa.
+	rows, err := r.db.QueryContext(ctx, `
+        SELECT id
+        FROM orders
+        WHERE status = 'PENDING' AND expires_at <= NOW()
+        ORDER BY id
+    `)
 	if err != nil {
 		return err
 	}
 
-	var expiredOrders []expiredOrder
-	tierRollback := make(map[int]int)
-	promoRollback := make(map[int]int)
+	var orderIDs []int
 
 	for rows.Next() {
-		var item expiredOrder
-		if err := rows.Scan(&item.id, &item.tierID, &item.quantity, &item.promoID); err != nil {
+		var id int
+		if err := rows.Scan(&id); err != nil {
 			rows.Close()
 			return err
 		}
-		expiredOrders = append(expiredOrders, item)
-		tierRollback[item.tierID] += item.quantity
-		if item.promoID.Valid {
-			promoRollback[int(item.promoID.Int64)]++
-		}
+		orderIDs = append(orderIDs, id)
 	}
+
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return err
 	}
+
 	if err := rows.Close(); err != nil {
 		return err
 	}
 
-	// Tidak ada order yang kedaluwarsa. Transaksi tetap ditutup dengan commit.
-	if len(expiredOrders) == 0 {
-		return tx.Commit()
-	}
-
-	// Batalkan semua tiket RESERVED milik order yang kedaluwarsa.
-	for _, item := range expiredOrders {
-		result, err := tx.ExecContext(ctx, `
-			UPDATE tickets
-			SET status = 'CANCELLED'
-			WHERE order_id = ? AND status = 'RESERVED'
-		`, item.id)
+	// Proses setiap order menggunakan transaksi terpisah.
+	for _, orderID := range orderIDs {
+		tx, err := r.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
+
+		var tierID, quantity int
+		var promoID sql.NullInt64
+
+		// Periksa kembali status order agar tidak memproses
+		// order yang sudah dibayar atau dibatalkan.
+		err = tx.QueryRowContext(ctx, `
+            SELECT tier_id, quantity, promo_code_id
+            FROM orders
+            WHERE id = ?
+              AND status = 'PENDING'
+              AND expires_at <= NOW()
+            FOR UPDATE
+        `, orderID).Scan(&tierID, &quantity, &promoID)
+
+		if err == sql.ErrNoRows {
+			tx.Rollback()
+			continue
+		}
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+
+		// Batalkan tiket yang masih berstatus RESERVED.
+		result, err := tx.ExecContext(ctx, `
+            UPDATE tickets
+            SET status = 'CANCELLED'
+            WHERE order_id = ? AND status = 'RESERVED'
+        `, orderID)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+
 		affected, err := result.RowsAffected()
 		if err != nil {
+			tx.Rollback()
 			return err
 		}
-		if affected != int64(item.quantity) {
-			return fmt.Errorf("jumlah tiket RESERVED untuk order %d tidak sesuai dengan quantity order", item.id)
-		}
-	}
 
-	// Agregasikan kuota per tier agar beberapa order expired pada tier yang sama
-	// semuanya dikembalikan, bukan hanya salah satu quantity dari JOIN.
-	tierIDs := make([]int, 0, len(tierRollback))
-	for id := range tierRollback {
-		tierIDs = append(tierIDs, id)
-	}
-	sort.Ints(tierIDs)
-	for _, tierID := range tierIDs {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE ticket_tiers
-			SET used_quota = GREATEST(used_quota - ?, 0)
-			WHERE id = ?
-		`, tierRollback[tierID], tierID); err != nil {
-			return err
+		// Jika jumlah tiket tidak sesuai, batalkan transaksi
+		// order ini saja dan lanjutkan ke order berikutnya.
+		if affected != int64(quantity) {
+			log.Printf(
+				"Anomali expiration order %d: jumlah tiket RESERVED %d, seharusnya %d",
+				orderID, affected, quantity,
+			)
+			tx.Rollback()
+			continue
 		}
-	}
 
-	// Satu promo dihitung satu kali per order yang memakai promo tersebut.
-	promoIDs := make([]int, 0, len(promoRollback))
-	for id := range promoRollback {
-		promoIDs = append(promoIDs, id)
-	}
-	sort.Ints(promoIDs)
-	for _, promoID := range promoIDs {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE promo_codes
-			SET used_count = GREATEST(used_count - ?, 0)
-			WHERE id = ?
-		`, promoRollback[promoID], promoID); err != nil {
-			return err
-		}
-	}
-
-	// Status order diubah paling akhir, tetap dalam transaksi yang sama.
-	for _, item := range expiredOrders {
-		result, err := tx.ExecContext(ctx, `
-			UPDATE orders
-			SET status = 'EXPIRED'
-			WHERE id = ? AND status = 'PENDING'
-		`, item.id)
+		// Kembalikan kuota tier.
+		_, err = tx.ExecContext(ctx, `
+            UPDATE ticket_tiers
+            SET used_quota = GREATEST(used_quota - ?, 0)
+            WHERE id = ?
+        `, quantity, tierID)
 		if err != nil {
+			tx.Rollback()
 			return err
 		}
-		affected, err := result.RowsAffected()
+
+		// Kembalikan penggunaan promo jika order memakai promo.
+		if promoID.Valid {
+			_, err = tx.ExecContext(ctx, `
+                UPDATE promo_codes
+                SET used_count = GREATEST(used_count - 1, 0)
+                WHERE id = ?
+            `, promoID.Int64)
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+
+		// Ubah status order menjadi EXPIRED.
+		_, err = tx.ExecContext(ctx, `
+            UPDATE orders
+            SET status = 'EXPIRED'
+            WHERE id = ?
+              AND status = 'PENDING'
+              AND expires_at <= NOW()
+        `, orderID)
 		if err != nil {
+			tx.Rollback()
 			return err
 		}
-		if affected != 1 {
-			return fmt.Errorf("status order %d gagal diperbarui menjadi EXPIRED", item.id)
+
+		if err := tx.Commit(); err != nil {
+			return err
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // CreateOrderWithHold membuat order PENDING dan tiket RESERVED sekaligus
 // mengunci serta mengurangi kuota dalam satu transaksi database.
 func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.CheckoutRequest) (int, error) {
 	if req.UserID <= 0 || req.EventID <= 0 || req.TierID <= 0 {
-		return 0, errors.New("data pengguna, event, atau tier tidak valid")
+		return 0, NewBusinessError("Data pengguna, event, atau tier tidak valid.")
 	}
 	if req.Quantity < 1 || req.Quantity > 4 {
-		return 0, errors.New("jumlah tiket harus antara 1 hingga 4")
+		return 0, NewBusinessError("Jumlah tiket harus antara 1 hingga 4.")
 	}
 	if len(req.Holders) != req.Quantity {
-		return 0, errors.New("jumlah data pemegang tiket tidak sesuai dengan jumlah tiket")
+		return 0, NewBusinessError("Jumlah data pemegang tiket tidak sesuai dengan jumlah tiket.")
 	}
 
 	// Jalankan lazy expiration terlebih dahulu. Jika gagal, jangan lanjut checkout
@@ -179,37 +187,76 @@ func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.Che
 
 	// A. Kunci tier yang dipilih dan pastikan tier memang milik event tersebut.
 	// FOR UPDATE mencegah dua buyer mengambil kuota terakhir secara bersamaan.
+
 	var categoryID int
 	var tierPrice float64
 	var quota, usedQuota int
 	var notStarted, isEnded int
+	var eventStatus string
+	var eventPassed int
 
 	err = tx.QueryRowContext(ctx, `
-		SELECT tc.id, tt.price, tt.quota, tt.used_quota,
-		       (NOW() < tt.start_date) AS not_started,
-		       (NOW() > tt.end_date) AS is_ended
-		FROM ticket_tiers tt
-		JOIN ticket_categories tc ON tc.id = tt.category_id
-		WHERE tt.id = ? AND tc.event_id = ?
-		FOR UPDATE
-	`, req.TierID, req.EventID).Scan(
-		&categoryID, &tierPrice, &quota, &usedQuota, &notStarted, &isEnded,
+    SELECT
+        tc.id,
+        tt.price,
+        tt.quota,
+        tt.used_quota,
+        (NOW() < tt.start_date) AS not_started,
+        (NOW() > tt.end_date) AS is_ended,
+        e.status,
+        (NOW() > e.event_date) AS event_passed
+    FROM ticket_tiers tt
+    JOIN ticket_categories tc
+        ON tc.id = tt.category_id
+    JOIN events e
+        ON e.id = tc.event_id
+    WHERE tt.id = ?
+      AND tc.event_id = ?
+    FOR UPDATE
+`, req.TierID, req.EventID).Scan(
+		&categoryID,
+		&tierPrice,
+		&quota,
+		&usedQuota,
+		&notStarted,
+		&isEnded,
+		&eventStatus,
+		&eventPassed,
 	)
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("tier tiket tidak ditemukan pada event yang dipilih")
+			return 0, NewBusinessError("Tier tiket tidak ditemukan pada event yang dipilih.")
 		}
 		return 0, err
 	}
 
+	// Validasi status event sebelum checkout.
+	if eventStatus == "CANCELLED" {
+		return 0, NewBusinessError("Event sudah dibatalkan dan tidak dapat dibeli.")
+	}
+
+	if eventStatus == "COMPLETED" {
+		return 0, NewBusinessError("Event sudah selesai dan tidak dapat dibeli.")
+	}
+
+	if eventStatus != "UPCOMING" && eventStatus != "ACTIVE" {
+		return 0, NewBusinessError("Status event tidak memungkinkan pembelian tiket.")
+	}
+
+	// Tolak pembelian jika tanggal pelaksanaan event sudah lewat.
+	if eventPassed == 1 {
+		return 0, NewBusinessError("Tanggal event sudah lewat dan tiket tidak dapat dibeli.")
+	}
+
 	if notStarted == 1 {
-		return 0, errors.New("masa penjualan tier tiket ini belum dimulai")
+		return 0, NewBusinessError("Masa penjualan tier tiket ini belum dimulai.")
 	}
 	if isEnded == 1 {
-		return 0, errors.New("masa penjualan tier tiket ini sudah berakhir")
+		return 0, NewBusinessError("Masa penjualan tier tiket ini sudah berakhir.")
 	}
 	if usedQuota+req.Quantity > quota {
-		return 0, errors.New("sisa kuota tiket tidak mencukupi untuk jumlah yang dipesan")
+		return 0, NewBusinessError("Sisa kuota tiket tidak mencukupi untuk jumlah yang dipesan.")
 	}
 
 	// B. Hitung harga kotor dan validasi kode promo bila buyer mengisinya.
@@ -235,19 +282,19 @@ func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.Che
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return 0, errors.New("kode promo tidak ditemukan pada event ini")
+				return 0, NewBusinessError("Kode promo tidak ditemukan pada event ini.")
 			}
 			return 0, err
 		}
 
 		if isActive == 0 || promoExpired == 1 || usedCount >= maxUses {
-			return 0, errors.New("kode promo sudah tidak aktif, kedaluwarsa, atau kuotanya habis")
+			return 0, NewBusinessError("Kode promo sudah tidak aktif, kedaluwarsa, atau kuotanya habis.")
 		}
 		if discountPercent < 0 || discountPercent > 100 {
-			return 0, errors.New("persentase diskon promo tidak valid")
+			return 0, NewBusinessError("Persentase diskon promo tidak valid.")
 		}
 		if promoCategoryID.Valid && int(promoCategoryID.Int64) != categoryID {
-			return 0, errors.New("kode promo tidak berlaku untuk kategori tiket ini")
+			return 0, NewBusinessError("Kode promo tidak berlaku untuk kategori tiket ini.")
 		}
 
 		discountAmount = roundMoney(totalGross * (discountPercent / 100.0))
@@ -266,7 +313,7 @@ func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.Che
 			return 0, err
 		}
 		if affected != 1 {
-			return 0, errors.New("kuota penggunaan kode promo sudah habis")
+			return 0, NewBusinessError("Kuota penggunaan kode promo sudah habis.")
 		}
 	}
 
@@ -287,7 +334,7 @@ func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.Che
 		return 0, err
 	}
 	if affected != 1 {
-		return 0, errors.New("sisa kuota tiket tidak mencukupi untuk jumlah yang dipesan")
+		return 0, NewBusinessError("Sisa kuota tiket tidak mencukupi untuk jumlah yang dipesan.")
 	}
 
 	// D. Buat kode order unik agar dua checkout dalam detik yang sama tidak bentrok.
@@ -350,7 +397,7 @@ func (r *OrderRepository) CreateOrderWithHold(ctx context.Context, req model.Che
 }
 
 // GetPaymentPageData mengambil detail order, event, tier, dan tiket untuk halaman pembayaran.
-func (r *OrderRepository) GetPaymentPageData(ctx context.Context, orderID int) (*model.PaymentPageData, error) {
+func (r *OrderRepository) GetPaymentPageData(ctx context.Context, orderID int, currentUserID int) (*model.PaymentPageData, error) {
 	if err := r.RunLazyExpiration(ctx); err != nil {
 		return nil, fmt.Errorf("gagal memeriksa pesanan kedaluwarsa: %w", err)
 	}
@@ -370,8 +417,8 @@ func (r *OrderRepository) GetPaymentPageData(ctx context.Context, orderID int) (
 		JOIN events e ON e.id = o.event_id
 		JOIN ticket_tiers tt ON tt.id = o.tier_id
 		JOIN ticket_categories tc ON tc.id = tt.category_id
-		WHERE o.id = ?
-	`, orderID).Scan(
+		        WHERE o.id = ? AND o.user_id = ?
+    `, orderID, currentUserID).Scan(
 		&data.Order.ID, &data.Order.OrderCode, &data.Order.UserID,
 		&data.Order.EventID, &data.Order.TierID, &promoID,
 		&data.Order.Quantity, &data.Order.TotalGross,
@@ -381,6 +428,9 @@ func (r *OrderRepository) GetPaymentPageData(ctx context.Context, orderID int) (
 		&remainingSec,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrOrderNotFound
+		}
 		return nil, err
 	}
 
@@ -397,11 +447,17 @@ func (r *OrderRepository) GetPaymentPageData(ctx context.Context, orderID int) (
 	data.RemainingSeconds = remainingSec
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT ticket_code, holder_name, holder_email, unit_net_price, status
-		FROM tickets
-		WHERE order_id = ?
-		ORDER BY id
-	`, orderID)
+    SELECT ticket_code, holder_name, holder_email, unit_net_price, status
+    FROM tickets
+    WHERE order_id = ?
+      AND EXISTS (
+          SELECT 1
+          FROM orders o
+          WHERE o.id = tickets.order_id
+            AND o.user_id = ?
+      )
+    ORDER BY id
+`, orderID, currentUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,36 +506,22 @@ func (r *OrderRepository) releaseReservedOrderResources(
 	}
 
 	result, err = tx.ExecContext(ctx, `
-		UPDATE ticket_tiers
-		SET used_quota = GREATEST(used_quota - ?, 0)
-		WHERE id = ?
-	`, quantity, tierID)
+    UPDATE ticket_tiers
+    SET used_quota = GREATEST(used_quota - ?, 0)
+    WHERE id = ?
+`, quantity, tierID)
 	if err != nil {
 		return err
-	}
-	affected, err = result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected != 1 {
-		return fmt.Errorf("tier untuk order %d tidak ditemukan saat mengembalikan kuota", orderID)
 	}
 
 	if promoID.Valid {
-		result, err = tx.ExecContext(ctx, `
-			UPDATE promo_codes
-			SET used_count = GREATEST(used_count - 1, 0)
-			WHERE id = ?
-		`, promoID.Int64)
+		_, err = tx.ExecContext(ctx, `
+        UPDATE promo_codes
+        SET used_count = GREATEST(used_count - 1, 0)
+        WHERE id = ?
+    `, promoID.Int64)
 		if err != nil {
 			return err
-		}
-		affected, err = result.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if affected != 1 {
-			return fmt.Errorf("kode promo untuk order %d tidak ditemukan saat mengembalikan kuota promo", orderID)
 		}
 	}
 
@@ -501,27 +543,58 @@ func (r *OrderRepository) ConfirmPayment(ctx context.Context, orderID int, userI
 
 	var ownerID, tierID, quantity, isExpired int
 	var status string
+	var eventStatus string
 	var promoID sql.NullInt64
+
 	err = tx.QueryRowContext(ctx, `
-		SELECT user_id, status, tier_id, quantity, promo_code_id,
-		       (NOW() > expires_at) AS is_expired
-		FROM orders
-		WHERE id = ?
-		FOR UPDATE
-	`, orderID).Scan(&ownerID, &status, &tierID, &quantity, &promoID, &isExpired)
+    SELECT
+        o.user_id,
+        o.status,
+        o.tier_id,
+        o.quantity,
+        o.promo_code_id,
+        (o.expires_at <= NOW()) AS is_expired,
+        e.status
+    FROM orders o
+    JOIN events e
+        ON e.id = o.event_id
+    WHERE o.id = ?
+    FOR UPDATE
+`, orderID).Scan(
+		&ownerID,
+		&status,
+		&tierID,
+		&quantity,
+		&promoID,
+		&isExpired,
+		&eventStatus,
+	)
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("pesanan tidak ditemukan")
+			return ErrOrderNotFound
 		}
 		return err
 	}
 
+	// Pastikan order memang milik buyer yang sedang login.
 	if ownerID != userID {
-		return errors.New("FORBIDDEN")
+		return ErrForbidden
 	}
+
+	// Tolak pembayaran apabila event sudah dibatalkan atau selesai.
+	if eventStatus == "CANCELLED" {
+		return NewBusinessError("Pembayaran ditolak karena event sudah dibatalkan.")
+	}
+	if eventStatus == "COMPLETED" {
+		return NewBusinessError("Pembayaran ditolak karena event sudah selesai.")
+	}
+
+	// Pastikan order masih menunggu pembayaran.
 	if status != "PENDING" {
-		return fmt.Errorf("pesanan tidak dapat dibayar karena statusnya %s", status)
+		return NewBusinessError(fmt.Sprintf("Pesanan tidak dapat dibayar karena statusnya %s.", status))
 	}
+
 	if isExpired == 1 {
 		if err := r.releaseReservedOrderResources(ctx, tx, orderID, tierID, quantity, promoID); err != nil {
 			return err
@@ -532,7 +605,7 @@ func (r *OrderRepository) ConfirmPayment(ctx context.Context, orderID int, userI
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		return errors.New("waktu pembayaran 15 menit sudah habis; pesanan berstatus EXPIRED")
+		return NewBusinessError("Waktu pembayaran 15 menit sudah habis. Pesanan berstatus EXPIRED.")
 	}
 
 	result, err := tx.ExecContext(ctx, `
@@ -554,7 +627,7 @@ func (r *OrderRepository) ConfirmPayment(ctx context.Context, orderID int, userI
 	result, err = tx.ExecContext(ctx, `
 		UPDATE orders
 		SET status = 'PAID', paid_at = NOW()
-		WHERE id = ? AND status = 'PENDING'
+		WHERE id = ? AND status = 'PENDING' AND expires_at > NOW()
 	`, orderID)
 	if err != nil {
 		return err
@@ -588,23 +661,23 @@ func (r *OrderRepository) CancelOrder(ctx context.Context, orderID int, userID i
 	var promoID sql.NullInt64
 	err = tx.QueryRowContext(ctx, `
 		SELECT user_id, status, tier_id, quantity, promo_code_id,
-		       (NOW() > expires_at) AS is_expired
+		      (expires_at <= NOW()) AS is_expired
 		FROM orders
 		WHERE id = ?
 		FOR UPDATE
 	`, orderID).Scan(&ownerID, &status, &tierID, &quantity, &promoID, &isExpired)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("pesanan tidak ditemukan")
+			return ErrOrderNotFound
 		}
 		return err
 	}
 
 	if ownerID != userID {
-		return errors.New("FORBIDDEN")
+		return ErrForbidden
 	}
 	if status != "PENDING" {
-		return fmt.Errorf("pesanan tidak dapat dibatalkan karena statusnya %s", status)
+		return NewBusinessError(fmt.Sprintf("Pesanan tidak dapat dibatalkan karena statusnya %s.", status))
 	}
 
 	if isExpired == 1 {
@@ -619,13 +692,13 @@ func (r *OrderRepository) CancelOrder(ctx context.Context, orderID int, userID i
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		return errors.New("batas waktu pembayaran sudah habis; pesanan berstatus EXPIRED, bukan CANCELLED")
+		return NewBusinessError("Batas waktu pembayaran sudah habis. Pesanan berstatus EXPIRED, bukan CANCELLED.")
 	}
 
 	result, err := tx.ExecContext(ctx, `
 		UPDATE orders
 		SET status = 'CANCELLED'
-		WHERE id = ? AND status = 'PENDING' AND expires_at >= NOW()
+		WHERE id = ? AND status = 'PENDING' AND expires_at > NOW()
 	`, orderID)
 	if err != nil {
 		return err
@@ -635,7 +708,7 @@ func (r *OrderRepository) CancelOrder(ctx context.Context, orderID int, userID i
 		return err
 	}
 	if affected != 1 {
-		return errors.New("pesanan sudah kedaluwarsa atau statusnya telah berubah")
+		return NewBusinessError("Pesanan sudah kedaluwarsa atau statusnya telah berubah.")
 	}
 
 	if err := r.releaseReservedOrderResources(ctx, tx, orderID, tierID, quantity, promoID); err != nil {

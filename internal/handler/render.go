@@ -37,18 +37,36 @@ func rupiah(n any) string {
 }
 
 // formatTanggal memformat time.Time ke format tanggal Indonesia yang ramah dibaca
-func formatTanggal(t time.Time) string {
+
+func formatTanggal(value any) string {
+	var t time.Time
+
+	switch v := value.(type) {
+	case time.Time:
+		t = v
+	case *time.Time:
+		if v == nil {
+			return "-"
+		}
+		t = *v
+	default:
+		return "-"
+	}
+
 	if t.IsZero() {
 		return "-"
 	}
+
 	bulan := [...]string{
 		"Januari", "Februari", "Maret", "April", "Mei", "Juni",
 		"Juli", "Agustus", "September", "Oktober", "November", "Desember",
 	}
+
 	return fmt.Sprintf("%02d %s %d, %02d:%02d WIB",
 		t.Day(), bulan[t.Month()-1], t.Year(), t.Hour(), t.Minute())
 }
 
+// addOne menambahkan angka 1 pada nilai integer.
 func addOne(n int) int {
 	return n + 1
 }

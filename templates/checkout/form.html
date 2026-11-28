@@ -13,8 +13,10 @@
                         <strong>Event dan tier belum dipilih.</strong>
                         <p class="mb-0 mt-1">
                             Untuk membuka checkout, sistem membutuhkan ID event dan ID tier tiket yang valid.
-                            Contoh URL pengujian: <code>/checkout?event_id=1&amp;tier_id=1</code>.
-                            Ganti angka tersebut dengan ID yang tersedia di database kamu.
+                            Silakan kembali ke katalog dan pilih event serta tier tiket yang tersedia.
+                            <a href="/" class="btn btn-outline-primary btn-sm mt-2">
+                                <i class="bi bi-arrow-left me-1"></i>Kembali ke Katalog
+                            </a>
                         </p>
                     </div>
                     {{end}}
@@ -25,8 +27,10 @@
                         <input type="hidden" name="tier_id" value="{{.TierID}}">
 
                         <div class="mb-4">
-                            <label for="quantitySelect" class="form-label fw-semibold">Jumlah Tiket (Maksimal 4 Tiket)</label>
-                            <select class="form-select" id="quantitySelect" name="quantity" required onchange="renderHolderFields()">
+                            <label for="quantitySelect" class="form-label fw-semibold">Jumlah Tiket (Maksimal 4
+                                Tiket)</label>
+                            <select class="form-select" id="quantitySelect" name="quantity" required
+                                onchange="renderHolderFields()">
                                 <option value="1" selected>1 Tiket</option>
                                 <option value="2">2 Tiket</option>
                                 <option value="3">3 Tiket</option>
@@ -37,7 +41,8 @@
                         <hr class="my-4">
                         <h5 class="fw-bold mb-3">Identitas Pemegang Tiket</h5>
                         <p class="text-muted small">
-                            Setiap tiket wajib memiliki nama dan email masing-masing penonton untuk keperluan pemeriksaan di pintu masuk (Gate Check-in).
+                            Setiap tiket wajib memiliki nama dan email masing-masing penonton untuk keperluan
+                            pemeriksaan di pintu masuk (Gate Check-in).
                         </p>
 
                         <div id="holdersContainer"></div>
@@ -46,11 +51,12 @@
                         <div class="mb-4">
                             <label for="promo_code" class="form-label fw-semibold">Kode Promo (Opsional)</label>
                             <input type="text" class="form-control text-uppercase" id="promo_code" name="promo_code"
-                                   maxlength="30" placeholder="Masukkan kode voucher bila ada">
+                                maxlength="30" placeholder="Masukkan kode voucher bila ada">
                         </div>
 
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-primary btn-lg fw-bold" {{if not .CheckoutReady}}disabled{{end}}>
+                            <button type="submit" class="btn btn-primary btn-lg fw-bold" {{if not
+                                .CheckoutReady}}disabled{{end}}>
                                 Lanjutkan Pembayaran
                             </button>
                         </div>
@@ -62,17 +68,17 @@
 </div>
 
 <script>
-function renderHolderFields() {
-    const quantitySelect = document.getElementById('quantitySelect');
-    const container = document.getElementById('holdersContainer');
-    const quantity = Number.parseInt(quantitySelect.value, 10);
+    function renderHolderFields() {
+        const quantitySelect = document.getElementById('quantitySelect');
+        const container = document.getElementById('holdersContainer');
+        const quantity = Number.parseInt(quantitySelect.value, 10);
 
-    container.innerHTML = '';
+        container.innerHTML = '';
 
-    for (let i = 1; i <= quantity; i++) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'p-3 mb-3 border rounded bg-light';
-        wrapper.innerHTML = `
+        for (let i = 1; i <= quantity; i++) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'p-3 mb-3 border rounded bg-light';
+            wrapper.innerHTML = `
             <h6 class="fw-bold text-primary mb-3">Data Pemegang Tiket #${i}</h6>
             <div class="row g-3">
                 <div class="col-md-6">
@@ -87,10 +93,10 @@ function renderHolderFields() {
                 </div>
             </div>
         `;
-        container.appendChild(wrapper);
+            container.appendChild(wrapper);
+        }
     }
-}
 
-document.addEventListener('DOMContentLoaded', renderHolderFields);
+    document.addEventListener('DOMContentLoaded', renderHolderFields);
 </script>
 {{end}}

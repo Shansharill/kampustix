@@ -1,17 +1,33 @@
+
 {{define "content"}}
 <div class="container my-5">
     <div class="row justify-content-center">
         <div class="col-lg-9">
             <div class="card shadow-sm border-0">
+
                 <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
                     <div>
+                        {{if eq .Order.Status "PAID"}}
+                        <h5 class="mb-0 fw-bold">Bukti Pembayaran (Receipt)</h5>
+                        {{else}}
                         <h5 class="mb-0 fw-bold">Konfirmasi Pembayaran</h5>
+                        {{end}}
                         <small>Kode Pesanan: <strong>{{.Order.OrderCode}}</strong></small>
                     </div>
-                    <span class="badge bg-warning text-dark fs-6">{{.Order.Status}}</span>
+
+                    {{if eq .Order.Status "PAID"}}
+                    <span class="badge bg-success fs-6">PAID</span>
+                    {{else if eq .Order.Status "EXPIRED"}}
+                    <span class="badge bg-danger fs-6">EXPIRED</span>
+                    {{else if eq .Order.Status "CANCELLED"}}
+                    <span class="badge bg-secondary fs-6">CANCELLED</span>
+                    {{else}}
+                    <span class="badge bg-warning text-dark fs-6">PENDING</span>
+                    {{end}}
                 </div>
 
                 <div class="card-body p-4">
+
                     {{if eq .Order.Status "PENDING"}}
                     <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3">
                         <div>
@@ -20,47 +36,59 @@
                         </div>
                         <div class="fs-3 fw-bold text-danger text-nowrap" id="countdownTimer">--:--</div>
                     </div>
+
                     {{else if eq .Order.Status "EXPIRED"}}
-                    <div class="alert alert-danger" role="alert">
+                    <div class="alert alert-danger">
                         <strong>Waktu pembayaran habis (EXPIRED).</strong>
-                        Kuota tiket dan pemakaian promo telah dikembalikan ke sistem. Silakan lakukan pemesanan ulang.
+                        Kuota tiket dan pemakaian promo telah dikembalikan ke sistem.
+                        Silakan lakukan pemesanan ulang.
                     </div>
-                    {{else if eq .Order.Status "PAID"}}
-                    <div class="alert alert-success" role="alert">
-                        <strong>Pembayaran berhasil (PAID).</strong> Seluruh tiket dalam pesanan ini sudah aktif.
-                    </div>
+
                     {{else if eq .Order.Status "CANCELLED"}}
-                    <div class="alert alert-secondary" role="alert">
+                    <div class="alert alert-secondary">
                         <strong>Pesanan dibatalkan (CANCELLED).</strong>
-                        Tiket RESERVED telah dibatalkan dan kuota tier serta pemakaian promo telah dikembalikan.
+                        Tiket RESERVED telah dibatalkan dan kuota telah dikembalikan.
                     </div>
                     {{end}}
 
                     <h6 class="fw-bold mt-4">Rincian Acara &amp; Tiket</h6>
+
                     <ul class="list-group mb-4">
                         <li class="list-group-item d-flex justify-content-between gap-3">
                             <span>Nama Event</span>
                             <strong class="text-end">{{.EventTitle}}</strong>
                         </li>
+
                         <li class="list-group-item d-flex justify-content-between gap-3">
                             <span>Kategori / Tier</span>
                             <strong class="text-end">{{.CategoryName}} - {{.TierName}} ({{.Order.Quantity}} Tiket)</strong>
                         </li>
+
                         <li class="list-group-item d-flex justify-content-between">
                             <span>Subtotal Harga Kotor</span>
-                            <span>Rp {{printf "%.2f" .Order.TotalGross}}</span>
+                            <span>{{rupiah .Order.TotalGross}}</span>
                         </li>
+
                         <li class="list-group-item d-flex justify-content-between text-success">
                             <span>Potongan Kode Promo</span>
-                            <span>- Rp {{printf "%.2f" .Order.DiscountAmount}}</span>
+                            <span>- {{rupiah .Order.DiscountAmount}}</span>
                         </li>
+
                         <li class="list-group-item d-flex justify-content-between bg-light fw-bold fs-5">
                             <span>Total Bayar Bersih</span>
-                            <span class="text-primary">Rp {{printf "%.2f" .Order.TotalNet}}</span>
+                            <span class="text-primary">{{rupiah .Order.TotalNet}}</span>
                         </li>
+
+                        {{if eq .Order.Status "PAID"}}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Waktu Pembayaran</span>
+                            <strong>{{format_tanggal .Order.PaidAt}}</strong>
+                        </li>
+                        {{end}}
                     </ul>
 
                     <h6 class="fw-bold">Daftar Pemegang Tiket ({{.Order.Quantity}} Orang)</h6>
+
                     <div class="table-responsive mb-4">
                         <table class="table table-bordered table-sm align-middle">
                             <thead class="table-light">
@@ -68,15 +96,18 @@
                                     <th>Kode Tiket</th>
                                     <th>Nama Pemegang</th>
                                     <th>Email</th>
+                                    <th>Harga Bersih</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {{range .Tickets}}
                                 <tr>
                                     <td><code>{{.TicketCode}}</code></td>
                                     <td>{{.HolderName}}</td>
                                     <td>{{.HolderEmail}}</td>
+                                    <td>{{rupiah .UnitNet}}</td>
                                     <td>
                                         {{if eq .Status "ACTIVE"}}
                                         <span class="badge bg-success">{{.Status}}</span>
@@ -101,8 +132,10 @@
                                 </button>
                             </form>
                         </div>
+
                         <div class="col-md-5">
-                            <form action="/orders/{{.Order.ID}}/cancel" method="POST" class="d-grid"
+                            <form action="/orders/{{.Order.ID}}/cancel" method="POST"
+                                  class="d-grid"
                                   onsubmit="return confirm('Batalkan pesanan ini sekarang? Kuota tiket dan pemakaian promo akan dikembalikan.');">
                                 <button type="submit" id="cancelBtn" class="btn btn-outline-danger btn-lg fw-bold">
                                     Batalkan Pesanan
@@ -110,53 +143,88 @@
                             </form>
                         </div>
                     </div>
+
                     <p class="text-muted small mt-3 mb-0">
-                        Kamu dapat membatalkan pesanan secara manual sebelum batas waktu 15 menit berakhir. Setelah dibatalkan, pesanan tidak dapat dibayar kembali.
+                        Kamu dapat membatalkan pesanan secara manual sebelum batas waktu 15 menit berakhir.
+                        Setelah dibatalkan, pesanan tidak dapat dibayar kembali.
                     </p>
                     {{end}}
 
-                    {{/* Tampilkan tombol kembali setelah order mencapai status akhir. */}}
-                    {{if or (eq .Order.Status "PAID") (eq .Order.Status "CANCELLED")}}
+                    {{if eq .Order.Status "PAID"}}
                     <div class="d-flex justify-content-end mt-4 pt-3 border-top">
                         <a href="/my-tickets" class="btn btn-primary px-4">
-                            <i class="bi bi-arrow-left me-2"></i>Kembali
+                            <i class="bi bi-ticket-perforated me-2"></i>Lihat Tiket Saya
+                        </a>
+                    </div>
+
+                    {{else if or (eq .Order.Status "CANCELLED") (eq .Order.Status "EXPIRED")}}
+                    <div class="d-flex justify-content-end mt-4 pt-3 border-top">
+                        <a href="/" class="btn btn-primary px-4">
+                            <i class="bi bi-arrow-left me-2"></i>Kembali ke Katalog
                         </a>
                     </div>
                     {{end}}
+
                 </div>
             </div>
         </div>
     </div>
 </div>
 
+
 {{if eq .Order.Status "PENDING"}}
 <script>
 let remainingSeconds = Number({{.RemainingSeconds}});
+
 const timerDisplay = document.getElementById('countdownTimer');
 const payBtn = document.getElementById('payBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+
 let timerInterval = null;
+let reloadScheduled = false;
 
 function updateTimer() {
+    // Jika waktu sudah habis
     if (remainingSeconds <= 0) {
         timerDisplay.textContent = '00:00';
+
+        // Nonaktifkan tombol pembayaran dan pembatalan
         if (payBtn) payBtn.disabled = true;
         if (cancelBtn) cancelBtn.disabled = true;
-        if (timerInterval !== null) clearInterval(timerInterval);
-        // Memuat ulang halaman agar Lazy Expiration memperbarui status menjadi EXPIRED.
-        window.location.reload();
+
+        // Hentikan interval countdown
+        if (timerInterval !== null) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+
+        // Jadwalkan reload hanya satu kali
+        if (!reloadScheduled) {
+            reloadScheduled = true;
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+
         return;
     }
 
+    // Hitung menit dan detik
     const minutes = Math.floor(remainingSeconds / 60);
     const seconds = remainingSeconds % 60;
+
+    // Tampilkan countdown
     timerDisplay.textContent =
-        String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+        String(minutes).padStart(2, '0') + ':' +
+        String(seconds).padStart(2, '0');
+
     remainingSeconds--;
 }
 
+// Jalankan countdown
 updateTimer();
+
+// Jalankan setiap satu detik
 timerInterval = setInterval(updateTimer, 1000);
 </script>
-{{end}}
 {{end}}
