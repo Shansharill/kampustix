@@ -89,7 +89,7 @@ func (s *GatekeeperService) ValidateAndCheckIn(
 	}
 
 	// Langkah 5: Lakukan check-in.
-	success, err := s.Repo.CheckIn(ctx, code, gatekeeperID)
+	success, err := s.Repo.CheckIn(ctx, code, selectedEventID, gatekeeperID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (s *GatekeeperService) ValidateAndCheckIn(
 	return ticket, nil
 }
 
-// GetBoardingPass mengambil informasi tiket untuk ditampilkan pada halaman cetak.
+// GetBoardingPassForBuyer menampilkan boarding pass milik buyer.
 func (s *GatekeeperService) GetBoardingPassForBuyer(
 	ctx context.Context,
 	code string,

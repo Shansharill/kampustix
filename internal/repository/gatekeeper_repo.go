@@ -68,6 +68,7 @@ func (r *GatekeeperRepo) FindByCode(
 func (r *GatekeeperRepo) CheckIn(
 	ctx context.Context,
 	code string,
+	selectedEventID int64,
 	gatekeeperID int64,
 ) (bool, error) {
 
@@ -80,11 +81,18 @@ func (r *GatekeeperRepo) CheckIn(
 			t.checked_in_by = ?
 		WHERE
 			t.ticket_code = ?
+			AND t.event_id = ?
 			AND t.status = 'ACTIVE'
 			AND e.status = 'ACTIVE'
 	`
 
-	result, err := r.DB.ExecContext(ctx, query, gatekeeperID, code)
+	result, err := r.DB.ExecContext(
+		ctx,
+		query,
+		gatekeeperID,
+		code,
+		selectedEventID,
+	)
 	if err != nil {
 		return false, err
 	}

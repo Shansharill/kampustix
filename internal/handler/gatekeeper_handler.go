@@ -31,9 +31,10 @@ func (h *GatekeeperHandler) scanPageData(
 	}
 
 	data := map[string]any{
-		"Title":  "Gatekeeper Scanner - KampusTix",
-		"User":   user,
-		"Events": events,
+		"Title":           "Gatekeeper Scanner - KampusTix",
+		"User":            user,
+		"Events":          events,
+		"SelectedEventID": int64(0),
 	}
 
 	for key, value := range extra {
@@ -57,7 +58,6 @@ func (h *GatekeeperHandler) ScanPage(w http.ResponseWriter, r *http.Request) {
 	h.View.Tampil(w, "gatekeeper/scan.html", data)
 }
 
-// ValidateTicket memproses validasi dan check-in tiket.
 // ValidateTicket memproses validasi dan check-in tiket.
 func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
@@ -103,14 +103,16 @@ func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Reques
 
 	if errors.Is(err, service.ErrTicketNotFound) {
 		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
-			"Error": "Tiket tidak ditemukan.",
+			"Error":           "Tiket tidak ditemukan.",
+			"SelectedEventID": eventID,
 		}))
 		return
 	}
 	if errors.Is(err, service.ErrTicketWrongEvent) {
 		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
-			"Ticket": ticket,
-			"Error":  "Tiket ini untuk event lain: " + ticket.EventName,
+			"Ticket":          ticket,
+			"Error":           "Tiket ini untuk event lain: " + ticket.EventName,
+			"SelectedEventID": eventID,
 		}))
 		return
 	}
@@ -129,8 +131,9 @@ func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Reques
 	for serviceError, message := range errorMessages {
 		if errors.Is(err, serviceError) {
 			h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
-				"Ticket": ticket,
-				"Error":  message,
+				"Ticket":          ticket,
+				"Error":           message,
+				"SelectedEventID": eventID,
 			}))
 			return
 		}
@@ -143,8 +146,9 @@ func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
-		"Ticket":  ticket,
-		"Success": "Check-in berhasil! Selamat datang.",
+		"Ticket":          ticket,
+		"Success":         "Check-in berhasil! Selamat datang.",
+		"SelectedEventID": eventID,
 	}))
 }
 

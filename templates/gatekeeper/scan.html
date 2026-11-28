@@ -55,7 +55,7 @@
             <option value="">-- Pilih Event --</option>
 
             {{range .Events}}
-                <option value="{{.ID}}">
+                <option value="{{.ID}}" {{if eq .ID $.SelectedEventID}}selected{{end}}>
                     {{.Title}} - {{.Venue}}
                 </option>
             {{else}}
