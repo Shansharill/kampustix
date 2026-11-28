@@ -13,16 +13,19 @@ type GatekeeperService struct {
 	Repo *repository.GatekeeperRepo
 }
 
-// Error khusus untuk kondisi tiket.
+// Error khusus untuk kondisi tiket dan event.
 var (
-	ErrTicketNotFound  = errors.New("tiket tidak ditemukan")
-	ErrTicketNotActive = errors.New("tiket tidak aktif atau sudah digunakan")
-	ErrTicketUsed      = errors.New("tiket sudah digunakan")
-	ErrTicketReserved  = errors.New("tiket belum dibayar")
-	ErrTicketRefunded  = errors.New("tiket sudah direfund")
-	ErrTicketCancelled = errors.New("tiket sudah dibatalkan")
-	ErrEventCancelled  = errors.New("event sudah dibatalkan")
-	ErrEventCompleted  = errors.New("event sudah selesai")
+	ErrTicketNotFound   = errors.New("tiket tidak ditemukan")
+	ErrTicketNotActive  = errors.New("tiket tidak aktif atau sudah digunakan")
+	ErrTicketUsed       = errors.New("tiket sudah digunakan")
+	ErrTicketReserved   = errors.New("tiket belum dibayar")
+	ErrTicketRefunded   = errors.New("tiket sudah direfund")
+	ErrTicketCancelled  = errors.New("tiket sudah dibatalkan")
+	ErrTicketWrongEvent = errors.New("tiket berasal dari event lain")
+
+	ErrEventUpcoming  = errors.New("event belum dimulai")
+	ErrEventCancelled = errors.New("event sudah dibatalkan")
+	ErrEventCompleted = errors.New("event sudah selesai")
 )
 
 func ticketStatusError(status string) error {
@@ -42,6 +45,8 @@ func ticketStatusError(status string) error {
 
 func eventStatusError(status string) error {
 	switch status {
+	case "UPCOMING":
+		return ErrEventUpcoming
 	case "CANCELLED":
 		return ErrEventCancelled
 	case "COMPLETED":
@@ -54,16 +59,11 @@ func eventStatusError(status string) error {
 func (s *GatekeeperService) ValidateAndCheckIn(
 	ctx context.Context,
 	code string,
+	selectedEventID int64,
 	gatekeeperID int64,
 ) (*model.GatekeeperTicket, error) {
 
-	// Langkah 1: Coba lakukan check-in langsung.
-	success, err := s.Repo.CheckIn(ctx, code, gatekeeperID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Langkah 2: Ambil data tiket terbaru.
+	// Langkah 1: Cari tiket berdasarkan kode.
 	ticket, err := s.Repo.FindByCode(ctx, code)
 	if err != nil {
 		return nil, err
@@ -73,8 +73,42 @@ func (s *GatekeeperService) ValidateAndCheckIn(
 		return nil, ErrTicketNotFound
 	}
 
-	// Jika check-in gagal, periksa penyebabnya.
+	// Langkah 2: Cocokkan event yang dipilih dengan event tiket.
+	if ticket.EventID != selectedEventID {
+		return ticket, ErrTicketWrongEvent
+	}
+
+	// Langkah 3: Periksa status event.
+	if err := eventStatusError(ticket.EventStatus); err != nil {
+		return ticket, err
+	}
+
+	// Langkah 4: Periksa status tiket.
+	if ticket.Status != "ACTIVE" {
+		return ticket, ticketStatusError(ticket.Status)
+	}
+
+	// Langkah 5: Lakukan check-in.
+	success, err := s.Repo.CheckIn(ctx, code, gatekeeperID)
+	if err != nil {
+		return nil, err
+	}
+
 	if !success {
+		// Ambil kembali status terbaru jika check-in gagal.
+		ticket, err = s.Repo.FindByCode(ctx, code)
+		if err != nil {
+			return nil, err
+		}
+
+		if ticket == nil {
+			return nil, ErrTicketNotFound
+		}
+
+		if ticket.EventID != selectedEventID {
+			return ticket, ErrTicketWrongEvent
+		}
+
 		if err := eventStatusError(ticket.EventStatus); err != nil {
 			return ticket, err
 		}
@@ -86,28 +120,16 @@ func (s *GatekeeperService) ValidateAndCheckIn(
 		return ticket, ErrTicketNotActive
 	}
 
-	// Check-in berhasil.
-	return ticket, nil
-}
-
-// GetBoardingPass mengambil informasi tiket untuk ditampilkan pada halaman cetak.
-func (s *GatekeeperService) GetBoardingPass(
-	ctx context.Context,
-	code string,
-) (*model.BoardingPass, error) {
-
-	boardingPass, err := s.Repo.FindBoardingPass(ctx, code)
+	// Langkah 6: Ambil data tiket setelah check-in berhasil.
+	ticket, err = s.Repo.FindByCode(ctx, code)
 	if err != nil {
 		return nil, err
 	}
 
-	if boardingPass == nil {
-		return nil, ErrTicketNotFound
-	}
-
-	return boardingPass, nil
+	return ticket, nil
 }
 
+// GetBoardingPass mengambil informasi tiket untuk ditampilkan pada halaman cetak.
 func (s *GatekeeperService) GetBoardingPassForBuyer(
 	ctx context.Context,
 	code string,
@@ -124,4 +146,12 @@ func (s *GatekeeperService) GetBoardingPassForBuyer(
 	}
 
 	return boardingPass, nil
+}
+
+// GetActiveEvents mengambil daftar event aktif untuk Gatekeeper.
+func (s *GatekeeperService) GetActiveEvents(
+	ctx context.Context,
+) ([]model.GatekeeperEvent, error) {
+
+	return s.Repo.FindActiveEvents(ctx)
 }

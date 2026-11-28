@@ -164,10 +164,28 @@
                 </div>
 
             </div>
-           
+            
             <div class="qr-section">
 
-                {{if eq .BoardingPass.Status "ACTIVE"}}
+                {{if eq .BoardingPass.EventStatus "CANCELLED"}}
+
+                    <div class="alert alert-danger">
+                        <h5 class="fw-bold">Event Dibatalkan</h5>
+                        <p class="mb-0">
+                            Event ini telah dibatalkan sehingga tiket tidak dapat digunakan.
+                        </p>
+                    </div>
+
+                {{else if eq .BoardingPass.EventStatus "COMPLETED"}}
+
+                    <div class="alert alert-secondary">
+                        <h5 class="fw-bold">Event Sudah Selesai</h5>
+                        <p class="mb-0">
+                            Event ini telah berakhir.
+                        </p>
+                    </div>
+
+                {{else if eq .BoardingPass.Status "ACTIVE"}}
 
                     <h5 class="fw-bold">QR Code Tiket</h5>
 

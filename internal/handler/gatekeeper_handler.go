@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"kampustix/internal/middleware"
@@ -15,21 +16,56 @@ type GatekeeperHandler struct {
 	View          *Renderer
 }
 
+// scanPageData menyiapkan data untuk halaman scanner.
+func (h *GatekeeperHandler) scanPageData(
+	r *http.Request,
+	extra map[string]any,
+) map[string]any {
+
+	user := middleware.CurrentUser(r)
+
+	events, err := h.GatekeeperSvc.GetActiveEvents(r.Context())
+	if err != nil {
+		log.Printf("Gagal mengambil daftar event aktif: %v", err)
+		events = nil
+	}
+
+	data := map[string]any{
+		"Title":  "Gatekeeper Scanner - KampusTix",
+		"User":   user,
+		"Events": events,
+	}
+
+	for key, value := range extra {
+		data[key] = value
+	}
+
+	return data
+}
+
 // ScanPage menampilkan halaman scanner tiket.
 func (h *GatekeeperHandler) ScanPage(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
 
-	data := map[string]any{
-		"Title": "Gatekeeper Scanner - KampusTix",
-		"User":  user,
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
 	}
+
+	data := h.scanPageData(r, nil)
 
 	h.View.Tampil(w, "gatekeeper/scan.html", data)
 }
 
 // ValidateTicket memproses validasi dan check-in tiket.
+// ValidateTicket memproses validasi dan check-in tiket.
 func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
+
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Gagal memproses formulir", http.StatusBadRequest)
@@ -39,97 +75,65 @@ func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Reques
 	code := strings.TrimSpace(r.PostFormValue("ticket_code"))
 
 	if code == "" {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title": "Gatekeeper Scanner - KampusTix",
-			"User":  user,
+		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
 			"Error": "Kode tiket wajib diisi.",
-		})
+		}))
+		return
+	}
+
+	eventID, err := strconv.ParseInt(
+		r.PostFormValue("event_id"),
+		10,
+		64,
+	)
+
+	if err != nil || eventID <= 0 {
+		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
+			"Error": "Silakan pilih event terlebih dahulu.",
+		}))
 		return
 	}
 
 	ticket, err := h.GatekeeperSvc.ValidateAndCheckIn(
 		r.Context(),
 		code,
+		eventID,
 		user.ID,
 	)
 
 	if errors.Is(err, service.ErrTicketNotFound) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title": "Gatekeeper Scanner - KampusTix",
-			"User":  user,
+		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
 			"Error": "Tiket tidak ditemukan.",
-		})
+		}))
+		return
+	}
+	if errors.Is(err, service.ErrTicketWrongEvent) {
+		h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
+			"Ticket": ticket,
+			"Error":  "Tiket ini untuk event lain: " + ticket.EventName,
+		}))
 		return
 	}
 
-	if errors.Is(err, service.ErrEventCancelled) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Event sudah dibatalkan. Check-in tidak diperbolehkan.",
-		})
-		return
+	errorMessages := map[error]string{
+		service.ErrEventUpcoming:   "Event belum dimulai. Check-in hanya dibuka saat event berstatus ACTIVE.",
+		service.ErrEventCancelled:  "Event sudah dibatalkan. Check-in tidak diperbolehkan.",
+		service.ErrEventCompleted:  "Event sudah selesai. Check-in tidak diperbolehkan.",
+		service.ErrTicketUsed:      "Tiket sudah pernah digunakan.",
+		service.ErrTicketReserved:  "Tiket belum dibayar dan belum dapat digunakan.",
+		service.ErrTicketRefunded:  "Tiket sudah direfund dan tidak berlaku.",
+		service.ErrTicketCancelled: "Tiket sudah dibatalkan dan tidak berlaku.",
+		service.ErrTicketNotActive: "Status tiket tidak valid.",
 	}
 
-	if errors.Is(err, service.ErrEventCompleted) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Event sudah selesai. Check-in tidak diperbolehkan.",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrTicketUsed) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Tiket sudah pernah digunakan.",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrTicketReserved) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Tiket belum dibayar dan belum dapat digunakan.",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrTicketRefunded) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Tiket sudah direfund dan tidak berlaku.",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrTicketCancelled) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Tiket sudah dibatalkan dan tidak berlaku.",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrTicketNotActive) {
-		h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-			"Title":  "Gatekeeper Scanner - KampusTix",
-			"User":   user,
-			"Ticket": ticket,
-			"Error":  "Status tiket tidak valid.",
-		})
-		return
+	for serviceError, message := range errorMessages {
+		if errors.Is(err, serviceError) {
+			h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
+				"Ticket": ticket,
+				"Error":  message,
+			}))
+			return
+		}
 	}
 
 	if err != nil {
@@ -138,61 +142,23 @@ func (h *GatekeeperHandler) ValidateTicket(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.View.Tampil(w, "gatekeeper/scan.html", map[string]any{
-		"Title":   "Gatekeeper Scanner - KampusTix",
-		"User":    user,
+	h.View.Tampil(w, "gatekeeper/scan.html", h.scanPageData(r, map[string]any{
 		"Ticket":  ticket,
 		"Success": "Check-in berhasil! Selamat datang.",
-	})
-}
-
-// PrintTicket menampilkan halaman boarding pass untuk dicetak.
-func (h *GatekeeperHandler) PrintTicket(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
-	user := middleware.CurrentUser(r)
-
-	// Mengambil kode tiket dari URL.
-	code := r.PathValue("code")
-
-	if code == "" {
-		http.Error(w, "Kode tiket wajib diisi.", http.StatusBadRequest)
-		return
-	}
-
-	// Meminta Service mengambil informasi boarding pass.
-	boardingPass, err := h.GatekeeperSvc.GetBoardingPass(
-		r.Context(),
-		code,
-	)
-
-	if errors.Is(err, service.ErrTicketNotFound) {
-		http.Error(w, "Tiket tidak ditemukan.", http.StatusNotFound)
-		return
-	}
-
-	if err != nil {
-		log.Printf("Gagal mengambil boarding pass %s: %v", code, err)
-		http.Error(w, "Terjadi kesalahan saat mengambil data tiket.", http.StatusInternalServerError)
-		return
-	}
-
-	// Mengirim data ke template print.html.
-	data := map[string]any{
-		"Title":        "Boarding Pass - KampusTix",
-		"User":         user,
-		"BoardingPass": boardingPass,
-	}
-
-	h.View.Tampil(w, "gatekeeper/print.html", data)
+	}))
 }
 
 // PrintBuyerTicket menampilkan Boarding Pass milik Buyer yang sedang login.
 func (h *GatekeeperHandler) PrintBuyerTicket(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r)
 
-	code := r.PathValue("code")
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	code := strings.TrimSpace(r.PathValue("code"))
+
 	if code == "" {
 		http.Error(w, "Kode tiket wajib diisi.", http.StatusBadRequest)
 		return
