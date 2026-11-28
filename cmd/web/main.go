@@ -39,6 +39,14 @@ func main() {
 	authMw := middleware.NewAuthMiddleware(userRepo)
 	authHandler := &handler.AuthHandler{AuthSvc: authSvc, View: view}
 
+	// 4a. PERAKITAN DEPENDENCY (Anggota 2: Master Event)
+	eventRepo := &repository.EventRepo{DB: db}
+	eventSvc := &service.EventService{Repo: eventRepo}
+	eventHandler := &handler.EventHandler{
+		EventSvc: eventSvc,
+		View:     view,
+	}
+
 	// 4b. PERAKITAN DEPENDENCY (Anggota 6: Gatekeeper)
 	gatekeeperRepo := &repository.GatekeeperRepo{DB: db}
 	gatekeeperSvc := &service.GatekeeperService{Repo: gatekeeperRepo}
@@ -50,13 +58,9 @@ func main() {
 	// 5. TAHAP PENDAFTARAN RUTE (ROUTING GO 1.22+)
 	mux := http.NewServeMux()
 
-	// --- A. Rute Publik / Katalog (Placeholder Anggota 2) ---
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		view.Tampil(w, "event/katalog.html", map[string]any{
-			"Title": "Katalog Event - KampusTix",
-			"User":  middleware.CurrentUser(r),
-		})
-	})
+	// --- A. Rute Publik / Katalog (Anggota 2) ---
+	mux.HandleFunc("GET /{$}", eventHandler.Katalog)
+	mux.HandleFunc("GET /events/{id}", eventHandler.Detail)
 
 	// --- B. Rute Autentikasi (Anggota 1) ---
 	// Rute /login & /register dibungkus 'RequireGuest':
