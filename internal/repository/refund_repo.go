@@ -49,23 +49,33 @@ func (r *RefundRepo) TiketMilikUser(ctx context.Context, userID int64) ([]model.
 }
 
 // KunciTiketMilik mengambil & mengunci tiket HANYA jika milik userID (Owner Check / anti-IDOR).
-// "FOR UPDATE OF t" (MySQL 8) hanya mengunci baris tickets, bukan orders/events, supaya
-// urutan kunci tidak bertabrakan dengan BatalkanEvent (events -> orders -> tickets) dan
-// pembeli lain di event yang sama tidak saling antre.
+// Dipecah 2 query (bukan JOIN + "FOR UPDATE OF t") agar jalan di MariaDB/XAMPP maupun MySQL 8:
+//  1. kunci baris tickets saja (FOR UPDATE tanpa JOIN),
+//  2. cek pemilik & status event tanpa kunci.
+//
+// Dengan begitu orders/events tidak ikut terkunci, sehingga urutan kunci tidak bertabrakan dengan
+// BatalkanEvent (events -> orders -> tickets) dan pembeli lain di event yang sama tidak saling antre.
 // Mengembalikan nil jika tiket tidak ada atau bukan milik user.
 func (r *RefundRepo) KunciTiketMilik(ctx context.Context, tx *sql.Tx, ticketID, userID int64) (*model.TiketUntukAksi, error) {
-	query := `SELECT t.id, t.order_id, t.tier_id, t.holder_name, t.holder_email, t.status, t.transfer_count,
-			t.unit_net_price, e.status, NOW() <= DATE_SUB(e.event_date, INTERVAL 7 DAY), NOW() < e.event_date
-		FROM tickets t
-		JOIN orders o ON o.id = t.order_id
-		JOIN events e ON e.id = t.event_id
-		WHERE t.id = ? AND o.user_id = ?
-		FOR UPDATE OF t`
 	var t model.TiketUntukAksi
-	err := tx.QueryRowContext(ctx, query, ticketID, userID).Scan(&t.ID, &t.OrderID, &t.TierID, &t.HolderName,
-		&t.HolderEmail, &t.Status, &t.TransferCount, &t.UnitNetPrice, &t.EventStatus, &t.MasihH7, &t.EventBelumMulai)
+	err := tx.QueryRowContext(ctx, `SELECT id, order_id, tier_id, holder_name, holder_email, status, transfer_count, unit_net_price
+		FROM tickets
+		WHERE id = ?
+		FOR UPDATE`, ticketID).Scan(&t.ID, &t.OrderID, &t.TierID, &t.HolderName, &t.HolderEmail,
+		&t.Status, &t.TransferCount, &t.UnitNetPrice)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.QueryRowContext(ctx, `SELECT e.status, NOW() <= DATE_SUB(e.event_date, INTERVAL 7 DAY), NOW() < e.event_date
+		FROM orders o
+		JOIN events e ON e.id = o.event_id
+		WHERE o.id = ? AND o.user_id = ?`, t.OrderID, userID).Scan(&t.EventStatus, &t.MasihH7, &t.EventBelumMulai)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil // tiket ada tapi bukan milik user: diperlakukan sama dengan tidak ditemukan
 	}
 	if err != nil {
 		return nil, err
